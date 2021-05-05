@@ -272,6 +272,12 @@ class LREAL( TYPE ):
     struct_format		= '<d'
     struct_calcsize		= struct.calcsize( struct_format )
 
+class OMRDATN( TYPE ):
+    """An EtherNet/IP DATE_AND_TIME_NSEC, OMRON VENDOR SPECIFIC DATA TYPE, READ/WRITE as ULINT; 8 bytes""" 
+    tag_type			= 0x000a
+    struct_format		= '<Q'
+    struct_calcsize		= struct.calcsize( struct_format )
+
 # Some network byte-order types that are occasionally used in parsing
 class UINT_network( TYPE ):
     """An EtherNet/IP UINT; 16-bit unsigned integer, but in network byte order"""
@@ -1876,21 +1882,22 @@ class typed_data( dfa ):
 
     data type	supported	type value	  size
 
-    BOOL 			= 0x00c1	# 1 byte (0x0_c1, _=[0-7] indicates relevant bit)
-    SINT	yes		= 0x00c2	# 1 byte
-    INT		yes		= 0x00c3	# 2 bytes
-    DINT	yes		= 0x00c4	# 4 bytes
-    REAL	yes		= 0x00ca	# 4 bytes
-    LREAL	yes		= 0x00cb	# 8 bytes
-    USINT	yes		= 0x00c6	# 1 byte
-    UINT	yes		= 0x00c7	# 2 bytes
-    WORD			= 0x00d2	# 2 byte (16-bit boolean array)
-    UDINT	yes		= 0x00c8	# 4 bytes
-    DWORD			= 0x00d3	# 4 byte (32-bit boolean array)
-    LINT			= 0x00c5	# 8 byte
-    SSTRING	yes		= 0x00da	# 1 byte length + <length> data
-    STRING	yes		= 0x00d0	# 2 byte length + <length> data (rounded up to 2 bytes)
-    STRUCT	yes		= 0x02a0	# 2 byte structure_tag + USINT data
+    BOOL 	    		= 0x00c1	# 1 byte (0x0_c1, _=[0-7] indicates relevant bit)
+    SINT	    yes		= 0x00c2	# 1 byte
+    INT		    yes		= 0x00c3	# 2 bytes
+    DINT	    yes		= 0x00c4	# 4 bytes
+    REAL	    yes		= 0x00ca	# 4 bytes
+    LREAL	    yes		= 0x00cb	# 8 bytes
+    USINT	    yes		= 0x00c6	# 1 byte
+    UINT	    yes		= 0x00c7	# 2 bytes
+    WORD	    		= 0x00d2	# 2 byte (16-bit boolean array)
+    UDINT	    yes		= 0x00c8	# 4 bytes
+    DWORD	    		= 0x00d3	# 4 byte (32-bit boolean array)
+    LINT	    		= 0x00c5	# 8 byte
+    SSTRING	    yes		= 0x00da	# 1 byte length + <length> data
+    STRING	    yes		= 0x00d0	# 2 byte length + <length> data (rounded up to 2 bytes)
+    STRUCT	    yes		= 0x02a0	# 2 byte structure_tag + USINT data
+    OMR__DAT    yes		= 0x000a	# 8 bytes
 
     If a STRUCT is indicated by tag_type, then a structure_tag is required.  If not supplied as a
     numeric or string, it will be parsed into .structure_tag.
@@ -1910,6 +1917,7 @@ class typed_data( dfa ):
         SSTRING.tag_type:	SSTRING,
         STRING.tag_type:	STRING,
         STRUCT.tag_type:	STRUCT,
+        OMRDATN.tag_type:	OMRDATN,
     }
 
     def __init__( self, name=None, tag_type=None, structure_tag=None, **kwds ):
@@ -1997,6 +2005,12 @@ class typed_data( dfa ):
         dltp[None]		= move_if( 	'movdouble',	source='.LREAL',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=dltd )
+        omrdatnd			= octets_noop(	'endomrdatn',
+                                                terminal=True )
+        omrdatnd[True]	= omrdatnp	= OMRDATN()
+        omrdatnp[None]		= move_if( 	'movomrdatn',	source='.OMRDATN',
+                                           destination='.data',	initializer=lambda **kwds: [],
+                                                state=omrdatnd )
         # Since a parsed "[S]STRING": { "string": "abc", "length": 3 } is multiple layers deep, and we
         # want to completely eliminate the target container in preparation for the next loop, we'll
         # need to move it up one layer, and then into the final target.
@@ -2072,6 +2086,9 @@ class typed_data( dfa ):
         slct[None]		= decide(	'LREAL', state=dltd,
             predicate=lambda path=None, data=None, **kwds: \
                 LREAL.tag_type == ( data[path+tag_type] if isinstance( tag_type, type_str_base ) else tag_type ))
+        slct[None]		= decide(	'OMRDATN', state=omrdatnd,
+            predicate=lambda path=None, data=None, **kwds: \
+                OMRDATN.tag_type == ( data[path+tag_type] if isinstance( tag_type, type_str_base ) else tag_type ))
         slct[None]		= decide(	'SSTRING', state=sstd,
             predicate=lambda path=None, data=None, **kwds: \
                 SSTRING.tag_type == ( data[path+tag_type] if isinstance( tag_type, type_str_base ) else tag_type ))

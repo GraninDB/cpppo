@@ -45,7 +45,7 @@ from .device import ( Object, Attribute,
                       resolve_element, resolve_tag, resolve, redirect_tag, lookup )
 from . import ucmm
 from .parser import ( BOOL, ULINT, LINT, UDINT, DINT, UINT, INT, USINT, SINT, STRUCT,
-                      LREAL, REAL, EPATH, typed_data, octets_encode,
+                      LREAL, REAL, EPATH, OMRDATN, typed_data, octets_encode,
                       move_if, octets_drop, octets_noop, enip_format, status )
 
 log				= logging.getLogger( "enip.lgx" )
@@ -382,6 +382,7 @@ class Logix( Message_Router ):
                                          SINT.tag_type, USINT.tag_type),
                     USINT.tag_type:	(BOOL.tag_type,
                                          USINT.tag_type),
+                    OMRDATN.tag_type:      (OMRDATN.tag_type),
                 }
                 assert data[context].type in allowed_tag_types.get(
                     attribute.parser.tag_type, (attribute.parser.tag_type,) ), \

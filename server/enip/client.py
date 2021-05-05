@@ -56,6 +56,8 @@ import traceback
 import warnings
 
 from ... import misc
+from datetime import datetime
+from dateutil import tz
 from ...dotdict import dotdict
 from ...automata import ( log_cfg, type_str_base, chainable, peekable )
 from .. import network
@@ -164,6 +166,20 @@ def bool_validate( b ):
         return False
     raise ValueError("Invalid %s; could not be interpreted as boolean" % b)
 
+def omrdatn_validate( b ):
+    try:
+        d = datetime.strptime(b, "%Y-%m-%d %H:%M:%S", ).replace(tzinfo=tz.gettz('UTC'))
+        lo_date = datetime(1970, 1, 1, 0, 0, 0, tzinfo=tz.gettz('UTC'))
+        hi_date = datetime(2554, 7, 21, 23, 34, 33, tzinfo=tz.gettz('UTC'))
+        assert lo_date <= d <= hi_date, "Invalid %s; not in range (%s,%s)" % ( d, lo_date, hi_date)
+        res = int(d.timestamp()) * 1000000000
+        print(d)
+        return res
+    except ValueError:
+        pass
+    
+    raise ValueError("Invalid %s; could not be interpreted as date and time. Please use YYYY-mm-dd HH:MM:SS format" % b)
+
 CIP_TYPES			= {
     'STRING':	(parser.STRING.tag_type, 0,				str ),
     'SSTRING':	(parser.SSTRING.tag_type, 0,				str ),
@@ -178,6 +194,7 @@ CIP_TYPES			= {
     'UINT':	(parser.UINT.tag_type,	parser.UINT.struct_calcsize,	lambda x: int_validate( x,  0,     2**16-1 )),
     'SINT':	(parser.SINT.tag_type,	parser.SINT.struct_calcsize,	lambda x: int_validate( x, -2**7,  2**8-1 )),  # extra range
     'USINT':	(parser.USINT.tag_type,	parser.USINT.struct_calcsize,	lambda x: int_validate( x,  0,     2**8-1 )),
+    'OMRDATN':	(parser.OMRDATN.tag_type,	parser.OMRDATN.struct_calcsize,	omrdatn_validate), # OMRON VENDOR SPECIFIC DATE_AND_TIME_NSEC
 }
 
 def parse_operations( tags, fragment=False, int_type=None, **kwds ):
@@ -1499,6 +1516,8 @@ class connector( client ):
                     val		= reply.read_frag.data
                 elif reply.status in (0x00,0x06) and 'read_tag' in reply:
                     val		= reply.read_tag.data
+                    if reply.read_tag.type == parser.OMRDATN.tag_type:
+                        val = list(map(lambda x:datetime.utcfromtimestamp(round(x/1000000000)), val))
                 elif reply.status in (0x00,0x06) and 'get_attribute_single' in reply:
                     val		= reply.get_attribute_single.data
                 elif reply.status in (0x00,0x06) and 'get_attributes_all' in reply:

@@ -177,6 +177,7 @@ class proxy( object ):
         "sstring":	( parser.SSTRING,	"SSTRING.string" ),
         "epath":	( parser.EPATH_padded,	"EPATH_padded.segment" ), # Supports padded EPATH: <words> 0x00 <EPATH> [<pad>]
         "epath_single":	( parser.EPATH_single,	"EPATH_single.segment" ), # A single EPATH segment (w/ no <words> SIZE)
+        "omrdatn":	( parser.OMRDATN,	"OMRDATN" ), # OMRON VENDOR SPECIFIC DATE_AND_TIME_NSEC
     }
 
     # 

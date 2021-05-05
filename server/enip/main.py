@@ -1142,6 +1142,7 @@ def main( argv=None, attribute_class=device.Attribute, attribute_kwds=None,
             "LREAL":	( parser.LREAL,  0.0 ),
             "SSTRING":	( parser.SSTRING, '' ),
             "STRING":	( parser.STRING, '' ),
+            "OMRDATN":	( parser.OMRDATN, 0 ),
         }
         assert tag_type in typenames, \
             "Invalid tag type %r; must be one of %r" % ( tag_type, list( typenames ))
