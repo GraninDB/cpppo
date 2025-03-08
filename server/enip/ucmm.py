@@ -1,17 +1,17 @@
-# 
+#
 # Cpppo -- Communication Protocol Python Parser and Originator
-# 
+#
 # Copyright (c) 2013, Hard Consulting Corporation.
-# 
+#
 # Cpppo is free software: you can redistribute it and/or modify it under the
 # terms of the GNU General Public License as published by the Free Software
 # Foundation, either version 3 of the License, or (at your option) any later
 # version.  See the LICENSE file at the top of the source tree.
-# 
+#
 # Cpppo is distributed in the hope that it will be useful, but WITHOUT ANY
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
-# 
+#
 
 from __future__ import absolute_import, print_function, division
 try:
@@ -36,7 +36,10 @@ import threading
 import traceback
 
 from ...dotdict import dotdict
-from . import parser, device, client
+#from . import parser, device, client
+from . import device, client
+
+from . import omron_parser as parser
 
 log				= logging.getLogger( "enip.ucmm" )
 
@@ -102,7 +105,7 @@ class UCMM( device.Object ):
     def __init__( self, *args, **kwds ):
         """Load any UCMM configurations (eg. route_path, routing table).   """
         super( UCMM, self ).__init__( *args, **kwds )
-        if self.instance_id == 0: # meta-Object? 
+        if self.instance_id == 0: # meta-Object?
             return
 
         # If a [UCMM] Route Path is configured, it only overrides self.route_path if it is None --
@@ -185,70 +188,70 @@ class UCMM( device.Object ):
 
             elif 'enip.CIP.send_data' in data:
                 # An Unconnected Send (SendRRData) message may be to a local object, eg:
-                # 
-                #     "enip.CIP.send_data.CPF.count": 2, 
-                #     "enip.CIP.send_data.CPF.item[0].length": 0, 
-                #     "enip.CIP.send_data.CPF.item[0].type_id": 0, 
-                #     "enip.CIP.send_data.CPF.item[1].length": 6, 
-                #     "enip.CIP.send_data.CPF.item[1].type_id": 178, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.segment[0].class": 102, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.segment[1].instance": 1, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.size": 2, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.service": 1, 
-                #     "enip.CIP.send_data.interface": 0, 
-                #     "enip.CIP.send_data.timeout": 5, 
+                #
+                #     "enip.CIP.send_data.CPF.count": 2,
+                #     "enip.CIP.send_data.CPF.item[0].length": 0,
+                #     "enip.CIP.send_data.CPF.item[0].type_id": 0,
+                #     "enip.CIP.send_data.CPF.item[1].length": 6,
+                #     "enip.CIP.send_data.CPF.item[1].type_id": 178,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.segment[0].class": 102,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.segment[1].instance": 1,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.size": 2,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.service": 1,
+                #     "enip.CIP.send_data.interface": 0,
+                #     "enip.CIP.send_data.timeout": 5,
 
                 # via the Message Router (note the lack of ...unconnected_send.route_path), or
                 # potentially to a remote object, via the backplane or a network link route path:
 
-		#     "enip.CIP.send_data.CPF.count": 2, 
-		#     "enip.CIP.send_data.CPF.item[0].length": 0, 
-		#     "enip.CIP.send_data.CPF.item[0].type_id": 0, 
-		#     "enip.CIP.send_data.CPF.item[1].length": 20, 
-		#     "enip.CIP.send_data.CPF.item[1].type_id": 178, 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.length": 6, 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.priority": 1, 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.input": "array('c', '\\x01\\x02 \\x01$\\x01')", 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.segment[0].class": 6, 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.segment[1].instance": 1, 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.size": 2, 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.route_path.segment[0].link": 0, 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.route_path.segment[0].port": 1, 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.route_path.size": 1, 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.service": 82, 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.timeout_ticks": 250, 
+		#     "enip.CIP.send_data.CPF.count": 2,
+		#     "enip.CIP.send_data.CPF.item[0].length": 0,
+		#     "enip.CIP.send_data.CPF.item[0].type_id": 0,
+		#     "enip.CIP.send_data.CPF.item[1].length": 20,
+		#     "enip.CIP.send_data.CPF.item[1].type_id": 178,
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.length": 6,
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.priority": 1,
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.input": "array('c', '\\x01\\x02 \\x01$\\x01')",
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.segment[0].class": 6,
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.segment[1].instance": 1,
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.size": 2,
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.route_path.segment[0].link": 0,
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.route_path.segment[0].port": 1,
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.route_path.size": 1,
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.service": 82,
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.timeout_ticks": 250,
                 # which carries:
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.get_attributes_all": true, 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.path.segment[0].class": 1, 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.path.segment[1].instance": 1, 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.path.size": 2, 
-		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.service": 1, 
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.get_attributes_all": true,
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.path.segment[0].class": 1,
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.path.segment[1].instance": 1,
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.path.size": 2,
+		#     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.service": 1,
                 # or:
-                #     "enip.CIP.send_data.CPF.count": 2, 
-                #     "enip.CIP.send_data.CPF.item[0].length": 0, 
-                #     "enip.CIP.send_data.CPF.item[0].type_id": 0, 
-                #     "enip.CIP.send_data.CPF.item[1].length": 32, 
-                #     "enip.CIP.send_data.CPF.item[1].type_id": 178, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.length": 18, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.priority": 5, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.input": "array('c', 'R\\x05\\x91\\x05SCADA\\x00(\\x0c\\x01\\x00\\x00\\x00\\x00\\x00')", 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.segment[0].class": 6, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.segment[1].instance": 1, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.size": 2, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.route_path.segment[0].link": 0, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.route_path.segment[0].port": 1, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.route_path.size": 1, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.service": 82, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.timeout_ticks": 157, 
-                #     "enip.CIP.send_data.interface": 0, 
+                #     "enip.CIP.send_data.CPF.count": 2,
+                #     "enip.CIP.send_data.CPF.item[0].length": 0,
+                #     "enip.CIP.send_data.CPF.item[0].type_id": 0,
+                #     "enip.CIP.send_data.CPF.item[1].length": 32,
+                #     "enip.CIP.send_data.CPF.item[1].type_id": 178,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.length": 18,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.priority": 5,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.input": "array('c', 'R\\x05\\x91\\x05SCADA\\x00(\\x0c\\x01\\x00\\x00\\x00\\x00\\x00')",
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.segment[0].class": 6,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.segment[1].instance": 1,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.path.size": 2,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.route_path.segment[0].link": 0,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.route_path.segment[0].port": 1,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.route_path.size": 1,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.service": 82,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.timeout_ticks": 157,
+                #     "enip.CIP.send_data.interface": 0,
                 #     "enip.CIP.send_data.timeout": 5,
                 # which encapsulates:
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.path.segment[0].symbolic": "SCADA", 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.path.segment[1].element": 12, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.path.size": 5, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.read_frag.elements": 1, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.read_frag.offs et": 0, 
-                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.service": 82, 
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.path.segment[0].symbolic": "SCADA",
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.path.segment[1].element": 12,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.path.size": 5,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.read_frag.elements": 1,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.read_frag.offs et": 0,
+                #     "enip.CIP.send_data.CPF.item[1].unconnected_send.request.service": 82,
 
                 # which must (also) be processed by the Message Router at the end of all the address
                 # or backplane hops.
@@ -266,7 +269,7 @@ class UCMM( device.Object ):
                 else:
                     # Unconnected session
                     unc_send	= data.enip.CIP.send_data.CPF.item[1].unconnected_send
-                    
+
                     # See what the request's parsed route_path segment(s) contains.  It might not be
                     # there (no route_path at all; no routing encapsulation, etc. MicroLogix simple
                     # request), it may containing a single route_path element(s) (which we will test,
@@ -371,7 +374,7 @@ class UCMM( device.Object ):
                 # explicit "Unconnected" request (Send RR Data).
                 if log.isEnabledFor( logging.DEBUG ):
                     log.debug( "%s Repackaged: %s", self, parser.enip_format( data ))
-                
+
                 # And finally, re-encapsulate the CIP SendRRData, with its (now unwrapped)
                 # Unconnected Send request response payload.
                 if log.isEnabledFor( logging.DEBUG ):

@@ -1,18 +1,18 @@
 
-# 
+#
 # Cpppo -- Communication Protocol Python Parser and Originator
-# 
+#
 # Copyright (c) 2013, Hard Consulting Corporation.
-# 
+#
 # Cpppo is free software: you can redistribute it and/or modify it under the
 # terms of the GNU General Public License as published by the Free Software
 # Foundation, either version 3 of the License, or (at your option) any later
 # version.  See the LICENSE file at the top of the source tree.
-# 
+#
 # Cpppo is distributed in the hope that it will be useful, but WITHOUT ANY
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
-# 
+#
 
 from __future__ import absolute_import, print_function, division
 try:
@@ -69,18 +69,18 @@ dialect				= None		# Default: typically logix.Logix
 
 log				= logging.getLogger( "enip.dev" )
 
-# 
+#
 # directory	-- All available device Objects and Attributes (including the "class" instance 0)
 # lookup	-- Find a class/instance/attribute
-# 
+#
 #     Object/Instance/Attribute lookup.  The Object is stored at (invalid)
 # attribute_id 0.   For example:
-# 
+#
 #         directory.6.0		Class 6, Instance 0: (metaclass) directory of Object/Attributes
 #         directory.6.1		Class 6, Instance 1: (instance)  directory of Object/Attributes
 #         directory.6.1.0	Class 6, Instance 1: device.Object (python instance)
 #         directory.6.1.1	Class 6, Instance 1, Attribute 1 device.Attribute (python instance)
-# 
+#
 directory			= dotdict()
 
 def __directory_path( class_id, instance_id=0, attribute_id=None ):
@@ -108,38 +108,38 @@ def lookup( class_id, instance_id=0, attribute_id=None ):
         res			= None
     finally:
         log.detail( "Class %5d/0x%04X, Instance %3d, Attribute %5r ==> %s",
-                    class_id, class_id, instance_id, attribute_id, 
+                    class_id, class_id, instance_id, attribute_id,
                     res if not exception else ( "Failed: %s" % exception ))
     return res
 
-# 
+#
 # symbol	-- All known symbolic address
 # redirect_tag	-- Direct a tag to a class, instance and attribute
 # resolve*	-- Resolve the class, instance [and attribute] from a path or tag.
-# 
+#
 # A path is something of the form:
-# 
+#
 #     {
 #         'size':6,
 #         'segment':[
-#             {'symbolic':'SCADA'}, 
+#             {'symbolic':'SCADA'},
 #             {'element':123}]
 #     }
-# 
+#
 # Multiple symbolic and element entries are allowed.  This is used for addressing structures:
-# 
+#
 #     boo[3].foo
-# 
+#
 # or for indexing multi-dimensional arrays:
-# 
+#
 #     table[3][4]
-# 
+#
 # or returning arbitrary sets of elements from an array:
-# 
+#
 #     array[3,56,179]
-# 
+#
 # The initial segments of the path must address a class and instance.
-# 
+#
 #TODO: A Tag must be able to (optionally) specify an element
 symbol				= {}
 symbol_keys			= ('class', 'instance', 'attribute')
@@ -269,14 +269,14 @@ def parse_int( x, base=10 ):
     except ValueError:
         return int( x, base=0 )
 
-# 
+#
 # Parsing of a symbolic tag like: 'Tag.Sub_Tag[<index>].Yet_More[<index>-<index>]', or a numeric tag
 # like: '@<class>/<instance>/<attribute>/<element>' or "@<class>/{"connection":123}/<attribute>".
-# 
+#
 # parse_path -- Returns a list containing EPATH segments.
 # parse_path_elements -- Returns '.'-separated EPATH segments, w/ element, count if any (otherwise None)
 # parse_path_component -- Parses a single 'str' EPATH component
-# 
+#
 def parse_path( path, elm=None ):
     """Convert a "."-separated sequence of "Tag" or "@<class>/<instance>/<attribute>" to a list of
     EtherNet/IP EPATH segments (if a string is supplied). Numeric form allows
@@ -348,8 +348,16 @@ def parse_path_component( path, elm=None, cnt=None ):
         lst			= None
         if '-' in elm:
             elm,lst		= elm.split( '-' )
+            elm			= int( elm )
             lst			= int( lst )
-        elm			= int( elm )
+        elif ',' in elm:
+            indexes		= elm.split( ',' )
+            indexes		= list(map(int, indexes)) # Validation INT
+            path        += '[' + elm + ']' # OMRON use segment for array as full path e.g. Items[1,2,2]
+            elm         = None
+        else:
+            elm			= int( elm )
+
         if lst is not None:
             cnt			= lst + 1 - elm
             assert cnt > 0, "Invalid element range %d-%d" % ( elm, lst )
@@ -419,7 +427,7 @@ def port_link( pl ):
 def parse_route_path( route_path, trailer_parser=None ):
     """A route path is None/0/False, or list of port/link[/port/link] segments.  Allows a single
     port/link element to be specified bare, and will en-list it, eg: "--route_path=1/2".
-    
+
     Must either result in a Falsey, or a valid sequence of port/link[/port/link...], followed by
     whatever sequence trailer_parser produces (if supplied).
 
@@ -503,9 +511,9 @@ def parse_connection_path( path ):
     return parse_route_path( path, trailer_parser=parse_path )
 
 
-# 
+#
 # EtherNet/IP CIP Object Attribute
-# 
+#
 class Attribute( object ):
     """A simple Attribute just has a default scalar value of 0.  We'll instantiate an instance of the
     supplied enip.TYPE/STRUCT class as the Attribute's .parser property.  This can be used to parse
@@ -652,11 +660,11 @@ class NumInstances( MaxInstance ):
     def __setitem__( self, key, value ):
         raise AssertionError("Cannot set value")
 
-# 
+#
 # EtherNet/IP CIP Object
-# 
+#
 # Some of the standard objects (Vol 1-3.13, Table 5-1-1):
-# 
+#
 #     Class Code	Object
 #     ----------	------
 #     0x01		Identity
@@ -666,39 +674,39 @@ class NumInstances( MaxInstance ):
 #     0x05 		Connection
 #     0x06		Connection Manager
 #     0x07		Register
-# 
+#
 # Figure 1-4.1 CIP Device Object Model
 #                                                       +-------------+
 #   Unconnected        -------------------------------->| Unconnected |
 #   Explicit Messages  <--------------------------------| Message     |
-#                                                       | Manager     |           
+#                                                       | Manager     |
 #                                                       +-------------+
-#                                                            |^            
-#                                                            ||           
+#                                                            |^
+#                                                            ||
 #                                                            ||          +-------------+
 #                                                            ||          | Link        |
 #                                                            ||          | Specific    |
 #                                                            ||          | Objects     |
 #                                                            ||          +-------------+
 #                                                            v|              ^v
-#                                                       +-------------+      ||               
+#                                                       +-------------+      ||
 #   Connection         -->       Explcit                | Message     |      ||
-#   Based              <--       Messaging      <--     | Router      |>-----+|                 
-#   Explicit                     Connection     -->     |             |<------+                 
-#   Message                      Objects                +-------------+                 
-#                                                            |^                          
-#                                                            ||                          
-#                                                            ||                                                    
-#                                                            ||                                                    
-#                                                            v|                                                    
-#                                                       +-------------+                               
-#   I/O                -->       I/O       ..+          | Application |                               
-#   Messages           <--       Connection  v  <..     | Objects     |                               
-#                                Objects   ..+  -->     |             |                               
-#                                                       +-------------+                               
-#                                                                                      
-#                                                                                      
-#                                                                                      
+#   Based              <--       Messaging      <--     | Router      |>-----+|
+#   Explicit                     Connection     -->     |             |<------+
+#   Message                      Objects                +-------------+
+#                                                            |^
+#                                                            ||
+#                                                            ||
+#                                                            ||
+#                                                            v|
+#                                                       +-------------+
+#   I/O                -->       I/O       ..+          | Application |
+#   Messages           <--       Connection  v  <..     | Objects     |
+#                                Objects   ..+  -->     |             |
+#                                                       +-------------+
+#
+#
+#
 class RequestUnrecognized( AssertionError ):
     """If a Request/Reply cannot be parsed"""
 
@@ -729,7 +737,7 @@ class Object( object ):
         with Obj.parse as machine:
             for m,w in machine.run( source=source, data=data ):
                 pass
-    
+
     and it would parse a recognized command (or reply, but that would be unexpected), and produce
     the following entries (in data, under the current context):
 
@@ -791,11 +799,11 @@ class Object( object ):
     # No config, by default (use default values).  Allows ${<section>:<key>} interpolation, and
     # comments anywhere via the # symbol (this implies no # allowed in any value, due to the lack of
     # support for escape symbol).
-    # 
+    #
     # If config files are desired, somewhere early in program initialization, add:
-    # 
+    #
     #     Object.config_loader.read( ["<config-file>", ...] )
-    # 
+    #
     config_loader		= configparser.ConfigParser(
         comment_prefixes=('#',), inline_comment_prefixes=('#',),
         allow_no_value=True, empty_lines_in_values=False,
@@ -967,10 +975,10 @@ class Object( object ):
             "CIP Object class %x, instance %x already exists\n%s" % (
                 self.class_id, self.instance_id, ''.join( traceback.format_stack() ))
 
-        # 
+        #
         # directory.1.2.None 	== self
         # self.attribute 	== directory.1.2 (a dotdict), for direct access of our attributes
-        # 
+        #
         self.attribute		= directory.setdefault( str( self.class_id )+'.'+str( instance_id ),
                                                         dotdict() )
         self.attribute['0']	= self
@@ -1955,25 +1963,25 @@ Message_Router.register_service_parser( number=Message_Router.MULTIPLE_RPY, name
 class Connection_Manager( Object ):
     """The Connection Manager (Class 0x06, Instance 1) Handles Unconnected Send (0x82) requests, such as:
 
-        "unconnected_send.service": 82, 
-        "unconnected_send.path.size": 2, 
-        "unconnected_send.path.segment[0].class": 6, 
-        "unconnected_send.path.segment[1].instance": 1, 
-        "unconnected_send.priority": 5, 
+        "unconnected_send.service": 82,
+        "unconnected_send.path.size": 2,
+        "unconnected_send.path.segment[0].class": 6,
+        "unconnected_send.path.segment[1].instance": 1,
+        "unconnected_send.priority": 5,
         "unconnected_send.timeout_ticks": 157
-        "unconnected_send.length": 16, 
-        "unconnected_send.request.input": "array('B', [82, 4, 145, 5, 83, 67, 65, 68, 65, 0, 20, 0, 2, 0, 0, 0])", 
-        "unconnected_send.route_path.octets.input": "array('B', [1, 0, 1, 0])", 
+        "unconnected_send.length": 16,
+        "unconnected_send.request.input": "array('B', [82, 4, 145, 5, 83, 67, 65, 68, 65, 0, 20, 0, 2, 0, 0, 0])",
+        "unconnected_send.route_path.octets.input": "array('B', [1, 0, 1, 0])",
 
     If the message contains an request (.length > 0), we get the Message Router (Class 0x02,
     Instance 1) to parse and process the request, eg:
 
-        "unconnected_send.request.service": 82, 
-        "unconnected_send.request.path.size": 4, 
-        "unconnected_send.request.path.segment[0].length": 5, 
-        "unconnected_send.request.path.segment[0].symbolic": "SCADA", 
-        "unconnected_send.request.read_frag.elements": 20, 
-        "unconnected_send.request.read_frag.offset": 2, 
+        "unconnected_send.request.service": 82,
+        "unconnected_send.request.path.size": 4,
+        "unconnected_send.request.path.segment[0].length": 5,
+        "unconnected_send.request.path.segment[0].symbolic": "SCADA",
+        "unconnected_send.request.read_frag.elements": 20,
+        "unconnected_send.request.read_frag.offset": 2,
 
     We assume that the Message Router will convert the .request to a Response and fill it its .input
     with the encoded response.
@@ -2497,7 +2505,7 @@ def __forward_open_reply():
     ovnd[True]		= oser	= UDINT(		context='forward_open', extension='.O_serial' )
     oser[None]			= octets_noop(	'check',
                                                 terminal=True )
-    
+
     # Optionally may include a remaining_path_size
     oser[True]		= rpth	= USINT(		context='forward_open', extension='.remaining_path_size' )
     rpth[True]		= rsvd	= octets_drop(	'reserved',	repeat=1,

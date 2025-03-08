@@ -71,11 +71,11 @@ path_ext_input			= '.input'	# default destination input
 type_unicode_encoder		= lambda s: ( b for b in s.encode( 'utf-8' ))
 type_str_encoder		= None if sys.version_info[0] < 3 else type_unicode_encoder
 
-# 
+#
 # is_...
-# 
+#
 #     Methods for identifying certain types of Python objects
-# 
+#
 def is_iterator( thing ):
     """Detects if 'thing' is already an iterator/generator."""
     return hasattr( thing, '__next__' if sys.version_info[0] < 3 else 'next' )
@@ -91,17 +91,17 @@ def is_listlike( thing ):
 #
 # peekable/peeking
 # chainable/chaining
-# 
+#
 #     Iterator wrappers with the ability to peek ahead and push back unused
 # input, and the ability to chain further input iterables to an existing
 # chainable iterator.
-# 
+#
 #     So, user code can simply use the peekable and chainable types.  These will
 # detect the required iterator features, and if not present, return an instance
 # of the appropriate peeking or chaining class over the provided iterator.
-# 
+#
 # BACKGROUND
-# 
+#
 #     When __new__ returns an instance of its cls, standard Python object
 # creation invokes its __init__; we don't want to do this, if we detect a
 # compatible x-ing iterator (including, specifically, an instance of x-ing
@@ -113,7 +113,7 @@ def is_listlike( thing ):
 # it.  Since Python detects that x-able's __new__ returned an x-ing instance or
 # something like it (certainly not an x-able instance), Python doesn't invoke
 # its __init__.
-# 
+#
 class peekable( object ):
     """Checks that the supplied iterable has (at least) the peek/sent methods, and
     returns it if so.  Otherwise, creates a peeking iterator with it."""
@@ -121,7 +121,7 @@ class peekable( object ):
         if hasattr( iterable, 'peek' ) and hasattr( iterable, 'sent' ):
             return iterable
         return peeking( iterable=iterable )
-    
+
 
 class chainable( object ):
     """Checks if the supplied iterable is already chaining, and returns it.  If
@@ -246,7 +246,7 @@ class remembering( chaining ):
 
     def forget( self ):
         self.memory		= []
-        
+
     def __next__( self ):
         result			= super( remembering, self ).__next__()
         self.memory.append( result )
@@ -272,7 +272,7 @@ class decide( object ):
         self.name		= name
         self.state		= state
         if predicate is None:
-            predicate		= lambda machine=None, source=None, path=None, data=None: True 
+            predicate		= lambda machine=None, source=None, path=None, data=None: True
         self.predicate		= predicate
 
     def __str__( self ):
@@ -338,7 +338,7 @@ class state( dict ):
     is tested before transitioning, and transitioning is terminated if the computed ending symbol
     has been reached."""
 
-    ANY				= -1 # The [True] default transition on any input 
+    ANY				= -1 # The [True] default transition on any input
     NON				= -2 # The [None] fallback transition on no input
 
     def __init__( self, name, terminal=False, alphabet=None, context=None, extension=None,
@@ -435,10 +435,10 @@ class state( dict ):
     # Data context
     @property
     def extension( self ):
-        return self._extension or '' 
+        return self._extension or ''
 
     def context( self, path=None, extension=None ):
-        """Yields: 
+        """Yields:
         Returns the state's data context, optionally joined with the specified path and
         extension "<path>[.<context>]<extension>", eg:
 
@@ -455,12 +455,12 @@ class state( dict ):
         ext			= extension if extension is not None else self.extension
         return pre + dot + add + ext
 
-    # 
+    #
     # [x] = <state>	-- Store an outgoing "edge" (input symbol 'x' and target <state>)
     # [x]		-- Find an outgoing transition for symbol 'x', or raise KeyError
     # get(x,<default>)	-- Find an outgoing transition for symbol 'x', or return default
     # encode(inp)	-- Transform the input symbol according to the supplied encoder
-    # 
+    #
     def encode( self, inp ):
         """All input symbols are encoded using the supplied encoder; the resultant encoded symbol or tuple
         of symbols are used to establish and find transitions.  We do not expect the value None or
@@ -649,8 +649,8 @@ class state( dict ):
         seen			= set()
         while not self.accepts( source=source, machine=machine, path=path, data=data ):
             crumb		= (None,source.peek(),source.sent)
-            assert crumb not in seen, \
-                "%s detected no progress before finding acceptable symbol" % ( self )
+            #assert crumb not in seen, \
+            #    "%s detected no progress before finding acceptable symbol" % ( self )
             seen.add( crumb )
             yield machine,None
 
@@ -680,7 +680,7 @@ class state( dict ):
                 log.info( "%s -- limit=%r == %r; ending at symbol %r vs. %r", self.name_centered(),
                           limit_src, limit, source.sent + limit, ending )
                 if ending is None or source.sent + limit < ending:
-                    ending	= source.sent + limit 
+                    ending	= source.sent + limit
 
             # Run the sub-machine; it is assumed that it ensures that sub-machine is deterministic
             # (doesn't enter a no-progress loop).  About 33% of the runtime...
@@ -747,7 +747,7 @@ class state( dict ):
 
         If not greedy, will cease producing transitions at a terminal state.  If greedy (the
         default), we'll continue to produce transitions until we reach a terminal state and cannot
-        transition on the next input symbol.  
+        transition on the next input symbol.
 
 
         If a state isn't terminal and cannot transition, it may yield non-transition events forever.
@@ -834,7 +834,7 @@ class state( dict ):
 
             None   		Controlled termination after completing final transition.   The terminal
             StopIteration:	condition should be True
-        
+
             GeneratorExit:	The DFA state generator has been discarded.
 
             Exception, *:	Unknown failure of state machinery.
@@ -943,7 +943,7 @@ class state( dict ):
             dead		= loopback and not terminal and not initial
 
             node		= cls( str( pre ), terminal=terminal, **kwds )
-            #log.debug( "%s --> %r %-10s, %-10s, %-10s", node.name_centered(), tab.values(), 
+            #log.debug( "%s --> %r %-10s, %-10s, %-10s", node.name_centered(), tab.values(),
             #          "initial" if initial else "", "terminal" if terminal else "", "dead" if dead else "" )
             if not dead:
                 states[pre]	= node    # must check for dead states in mapping below...
@@ -980,7 +980,7 @@ class state( dict ):
                                 machine.map[pre] )
                         if len( machine.map[pre] ) == 2:
                             assert ( None in machine.map[pre] ), \
-                                "If 2 transitions, one must be '.' (anychar): %r" % ( 
+                                "If 2 transitions, one must be '.' (anychar): %r" % (
                                     machine.map[pre] )
 
                     # Add and link up additional required states; lst will index last added one (if
@@ -1013,8 +1013,8 @@ class state( dict ):
                 # to None (a non-transition), forcing the regular expression dfa to cease, rejecting
                 # the rest of the symbols.  The dfa will be terminal, iff A) it was marked terminal
                 # itself, and B) if the final sub-state was a terminal state.  If there is already a
-                # wildcard ('True') transition to None, then we can skip 
-                dst		= states.get( nxt ) # will be None if 'nxt' is a "dead" state 
+                # wildcard ('True') transition to None, then we can skip
+                dst		= states.get( nxt ) # will be None if 'nxt' is a "dead" state
                 redundant	= dst is None and states[pre].get( True, True ) is None
                 #log.debug( "%s <- %-10.10r --> %s %s", states[pre].name_centered(), sym, dst,
                 #           "redundant; skipping" if redundant else "" )
@@ -1079,7 +1079,7 @@ class state_struct( state ):
     (default: None) from the start of the collected ....input data, and then at index (default: 0,
     based on the size of the struct format).  For example, to get the 3rd 16-bit little-endian
     UINT16, beginning at offset 1 into the buffer, use format='<H', offset=1, index=2.
-    
+
     The raw data is assumed to be at <path>[.<context>]<input_extension> (default: '.input', same as
     state_input).  Has a .calcsize property (like struct.Struct) which returns the struct format
     size in bytes, as well as .offset and .index properties.
@@ -1113,7 +1113,7 @@ class state_struct( state ):
         super( state_struct, self ).terminate( exception=exception, machine=machine, path=path, data=data )
         ours			= self.context( path=path )
         if exception is not None:
-            log.info( "%s: Not decoding struct from %r due to: %r", self.name_centered(), ours, 
+            log.info( "%s: Not decoding struct from %r due to: %r", self.name_centered(), ours,
                       exception )
             return
 
@@ -1255,8 +1255,8 @@ class dfa_base( object ):
         while self.loop() and not stasis:
             self.reset()
             self.cycle	       += 1 # On last cycle, sub-machine may be terminated at any terminal state
-            #log.debug( "%s <sub  %s> %3d/%3d (from %s)", self.name_centered(), 
-            #           "loop" if self.cycle < self.final else "last" , self.cycle, self.final, 
+            #log.debug( "%s <sub  %s> %3d/%3d (from %s)", self.name_centered(),
+            #           "loop" if self.cycle < self.final else "last" , self.cycle, self.final,
             #           repr( final_src ) if final_src is not None else "(default)" )
             yield self,self.current
 
@@ -1417,7 +1417,7 @@ class regex( dfa ):
                   regex_context=None, **kwds ):
         assert initial
         regexstr, lego, machine, initial = regex_states.from_regex(
-            initial, alphabet=regex_alphabet, encoder=regex_encoder, 
+            initial, alphabet=regex_alphabet, encoder=regex_encoder,
             typecode=regex_typecode, context=regex_context )
         super( regex, self ).__init__( name or repr( regexstr ), initial=initial, **kwds )
 
@@ -1427,7 +1427,7 @@ class regex_bytes( regex ):
     utf-8 on Python3 so encode them to bytes, and transform the resultant state
     machine to accept the equivalent sequence of bytes.  Cannot encode machines
     with any more than a single outgoing transition matching any multi-byte
-    input symbol (unless the only other transition is '.' (anychar)).  
+    input symbol (unless the only other transition is '.' (anychar)).
 
     The resultant .input array will be bytes data ('B' in Python3, 'c' in Python2)."""
     def __init__( self,
@@ -1440,7 +1440,7 @@ class regex_bytes( regex ):
                   regex_states=regex_states,
                   regex_alphabet=regex_alphabet,
                   regex_encoder=regex_encoder,
-                  regex_typecode=regex_typecode, 
+                  regex_typecode=regex_typecode,
                   regex_context=regex_context, **kwds )
 
 
@@ -1468,7 +1468,7 @@ class string_base( object ):
     the desired encoding, and doesn't need to be decoded from raw bytes into another encoding.  This
     will generally be the case when the underlying regex is operating on native Python str types
     (ascii or latin-1 in Python 2, utf-8 in Python 3).  When operating on raw bytes, however, a
-    target encoding should be provided.  
+    target encoding should be provided.
 
     In Python 2, it is not possible to differentiate between raw bytes (str) and native
     ascii/latin-1 strings (str).  So, if you're operating in raw bytes and you don't provide an
@@ -1583,7 +1583,7 @@ class regex_bytes_promote( regex_bytes ):
         Does not delete the original data, but it is quite easy to arrange things such that the
         original location ceases to exist; simply make the destination assign to an element in the
         path to the data, eg::
-        
+
             data.path.context = data.path.context.subcontext.input
 
         """

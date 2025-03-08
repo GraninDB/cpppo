@@ -24,3 +24,6 @@ dist/
 *.svg
 .vagrant
 .pytest_cache/
+
+localtests/localtest.ini
+poetry.lock

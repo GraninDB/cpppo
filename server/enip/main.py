@@ -1,17 +1,17 @@
-# 
+#
 # Cpppo -- Communication Protocol Python Parser and Originator
-# 
+#
 # Copyright (c) 2013, Hard Consulting Corporation.
-# 
+#
 # Cpppo is free software: you can redistribute it and/or modify it under the
 # terms of the GNU General Public License as published by the Free Software
 # Foundation, either version 3 of the License, or (at your option) any later
 # version.  See the LICENSE file at the top of the source tree.
-# 
+#
 # Cpppo is distributed in the hope that it will be useful, but WITHOUT ANY
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
-# 
+#
 
 from __future__ import absolute_import, print_function, division
 try:
@@ -51,7 +51,10 @@ import traceback
 
 import cpppo
 from .. import network
-from . import defaults, parser, device, ucmm, logix
+#from . import defaults, parser, device, ucmm, logix
+from . import defaults, device, ucmm
+
+from . import omron_parser as parser
 
 log				= logging.getLogger( "enip.srv" )
 
@@ -60,7 +63,7 @@ log				= logging.getLogger( "enip.srv" )
 # from incoming parsed command-line options.  This'll be passed (ultimately) to the server and
 # web_api Thread Thread target functions, broken out as keyword parameters.  As a result, the second
 # (and lower) levels of this dotdict will remain as dotdict objects assigned to keywords determined
-# by the top level dict keys.  
+# by the top level dict keys.
 options				= cpppo.dotdict()
 
 # The stats for the connections presently open, indexed by <interface>:<port>.   Of particular
@@ -80,10 +83,10 @@ try:
 except:
     pass
 
-# 
+#
 # The Web API, implemented using web.py
-# 
-# 
+#
+#
 def deduce_encoding( available, environ, accept=None ):
     """Deduce acceptable encoding from HTTP Accept: header:
 
@@ -206,18 +209,18 @@ def html_wrap( thing, tag="div", **kwargs ):
 # URL request handlers
 #
 #     api_request	-- Returns all specified, after executing (optional) command
-# 
-# 
+#
+#
 #   group       / match   / command / value	description
-#   -----         -----     -------   -----	----------- 
+#   -----         -----     -------   -----	-----------
 #   tag         / <tag>   / value[x]/ 1000	Set the given tag's attribute's value[x] to 1000
 #   tag         / <tag>   / value   / [1,2,3]
-# 
+#
 #   option      / delay   / value   / 1.2	Set the option delay.value=1.2
 #   connections / *       / eof     / true	Signal an EOF to the specified connection
 #   server      / control / disable / true      Disable the server, dropping connections (false re-enable)
 #   server      / control / done    / true      Terminate the server (as if hit with a ^C)
-# 
+#
 def api_request( group, match, command, value,
                       queries=None, environ=None, accept=None,
                       framework=None ):
@@ -265,7 +268,7 @@ def api_request( group, match, command, value,
         match		= queries["match"]
         del queries["match"]
     if not match:
-        match		= "*" 
+        match		= "*"
 
     # The command/value defaults to the HTTP request, but also may be overridden by
     # the query option.
@@ -295,18 +298,18 @@ def api_request( group, match, command, value,
         }
 
     logging.debug( "Searching for %s/%s, since: %s (%s)",
-            group, match, since, 
+            group, match, since,
             None if since is None else time.ctime( since ))
 
     # Effectively:
     #     group.match.command = value
-    # Look through each "group" object's dir of available attributes for "match".  Then, see if 
+    # Look through each "group" object's dir of available attributes for "match".  Then, see if
     # that target attribute exists, and is something we can get attributes from.
-    for grp, obj in [ 
+    for grp, obj in [
             ('options',		options),
             ('connections', 	connections),
             ('tags',		tags ),
-            ('server',		srv_ctl )]: 
+            ('server',		srv_ctl )]:
         for mch in [ m for m in dir( obj ) if not m.startswith( '_' ) ]:
             log.detail( "Evaluating %s.%s: %r", grp, mch, getattr( obj, mch, None ))
             if not fnmatch.fnmatch( grp, group ):
@@ -319,7 +322,7 @@ def api_request( group, match, command, value,
                 continue
             if not hasattr( target, '__getattr__' ):
                 continue
-          
+
             # The obj's group name 'grp' matches requested group (glob), and the entry 'mch' matches
             # request match (glob).  /<group>/<match> matches this obj.key.
             result		= {}
@@ -359,7 +362,7 @@ def api_request( group, match, command, value,
                 data[a]		= getattr( target, a )
             content["command"]	= result
             content["data"].setdefault( grp, {} )[mch] = data
-        
+
 
     # Report the end of the time-span of alarm results returned; if none, then
     # the default time will be the _timer() at beginning of this function.  This
@@ -401,9 +404,9 @@ def api_request( group, match, command, value,
     return accept, response
 
 
-# 
+#
 # The web.py url endpoints, and their classes
-# 
+#
 class trailing_slash:
     def GET( self, path ):
         web.seeother( path )
@@ -493,7 +496,7 @@ class api:
 
         log.detail( "group: %s, match: %s, command: %s, value: %s, accept: %s",
                     group, match, command, value, clean.accept )
-            
+
         content, response = api_request( group=group, match=match,
                                             command=command, value=value,
                                             queries=queries, environ=environ,
@@ -524,14 +527,14 @@ def web_api( http=None):
         log.error( "Web API server on %s:%s failed: %s", http[0], http[1], exc )
 
 
-# 
+#
 # The EtherNet/IP CIP Main and Server Thread
-# 
+#
 # stats_for	-- Finds/creates the stats entry for a specified peer (if any)
 # enip_srv	-- This function runs in a Thread for each active connection.
 # enip_srv_udp	-- Service multiple UDP/IP peers (limited web interface control)
 # enip_srv_tcp	-- Service one TCP/IP peer
-# 
+#
 def stats_for( peer ):
     """If no peer address provided, we won't have a stats entry 'til first data received."""
     global connections
@@ -638,7 +641,7 @@ def enip_srv_udp( conn, name, enip_process, **kwds ):
                     # PyPy compatibility; avoid deferred destruction of generators
                     for mch,sta in engine:
                         if sta is not None:
-                            # No more transitions available.  Wait for input.  
+                            # No more transitions available.  Wait for input.
                             continue
                         assert not addr, "Incomplete UDP request from client %r" % ( addr )
                         msg	= None
@@ -765,7 +768,7 @@ def enip_srv_tcp( conn, addr, name, enip_process, delay=None, **kwds ):
                             # *not* read using attributes here, to avoid reporting completion to
                             # external APIs (eg. web) awaiting reception of these signals.
                             if kwds['server']['control']['done'] or kwds['server']['control']['disable']:
-                                log.detail( "%s done, due to server done/disable", 
+                                log.detail( "%s done, due to server done/disable",
                                             machine.name_centered() )
                                 stats['eof']	= True
                             if msg is not None:
@@ -886,7 +889,7 @@ logrotate_signalled		= False
 
 def logrotate_request( signum, frame ):
     global logrotate_signalled
-    logrotate_signalled		= True	
+    logrotate_signalled		= True
 
 def logrotate_perform():
     global logrotate_signalled
@@ -897,9 +900,9 @@ def logrotate_perform():
             if isinstance( hdlr, logging.FileHandler ):
                 hdlr.close()
 
-# 
+#
 # main		-- Run the EtherNet/IP Controller Simulation
-# 
+#
 def main( argv=None, attribute_class=device.Attribute, idle_service=None, identity_class=None,
           UCMM_class=None, message_router_class=None, connection_manager_class=None, **kwds ):
     """Pass the desired argv (excluding the program name in sys.arg[0]; typically pass argv=None, which
@@ -931,12 +934,12 @@ def main( argv=None, attribute_class=device.Attribute, idle_service=None, identi
         epilog = "" )
 
     ap.add_argument( '-v', '--verbose', action="count",
-                     default=0, 
+                     default=0,
                      help="Display logging information." )
     ap.add_argument( '-c', '--config', action='append',
                      help="Add another (higher priority) config file path." )
     ap.add_argument( '--no-config', action='store_true',
-                     default=False, 
+                     default=False,
                      help="Disable loading of config files (default: False)" )
     ap.add_argument( '-a', '--address',
                      default=( "%s:%d" % defaults.address ),
@@ -946,12 +949,12 @@ def main( argv=None, attribute_class=device.Attribute, idle_service=None, identi
                      default=False,
                      help="Output server network binding as '... running on (<interface>, <port>)' to stdout" )
     ap.add_argument( '-u', '--udp', action='store_true',
-                     default=True, 
+                     default=True,
                      help="Enable UDP/IP server (default: True)" )
     ap.add_argument( '-U', '--no-udp', dest="udp", action='store_false',
                      help="Disable UDP/IP server" )
     ap.add_argument( '-t', '--tcp', action='store_true',
-                     default=True, 
+                     default=True,
                      help="Enable TCP/IP server (default: True)" )
     ap.add_argument( '-T', '--no-tcp', dest="tcp", action='store_false',
                      help="Disable TCP/IP server" )
@@ -1001,7 +1004,7 @@ def main( argv=None, attribute_class=device.Attribute, idle_service=None, identi
         3: logging.INFO,
         4: logging.DEBUG,
         }
-    cpppo.log_cfg['level']	= ( levelmap[args.verbose] 
+    cpppo.log_cfg['level']	= ( levelmap[args.verbose]
                                     if args.verbose in levelmap
                                     else logging.DEBUG )
 
@@ -1088,7 +1091,7 @@ def main( argv=None, attribute_class=device.Attribute, idle_service=None, identi
             value		= super( Attribute_print, self ).__getitem__( key )
             if log.isEnabledFor( logging.NORMAL ):
                 print( "%20s[%5s-%-5s] == %s" % (
-                    self.name, 
+                    self.name,
                     key.indices( len( self ))[0]   if isinstance( key, slice ) else key,
                     key.indices( len( self ))[1]-1 if isinstance( key, slice ) else key,
                     value ))
@@ -1097,7 +1100,7 @@ def main( argv=None, attribute_class=device.Attribute, idle_service=None, identi
         def __setitem__( self, key, value ):
             super( Attribute_print, self ).__setitem__( key, value )
             print( "%20s[%5s-%-5s] <= %s" % (
-                self.name, 
+                self.name,
                 key.indices( len( self ))[0]   if isinstance( key, slice ) else key,
                 key.indices( len( self ))[1]-1 if isinstance( key, slice ) else key,
                 value ))
@@ -1215,7 +1218,7 @@ def main( argv=None, attribute_class=device.Attribute, idle_service=None, identi
     # available for the web API to report/manipulate.  By default, we'll specify no route_path, so
     # any request route_path will be accepted.  Otherwise, we'll create a UCMM-derived class with
     # the specified route_path, which will filter only requests w/ the correct route_path.
-    # 
+    #
     # It is also logix.process that calls logix.setup, to automatically create non-existent tags.  If
     # using some other dialect, it may be necessary to set up all required CIP Objects, and any
     # Object/instance/attributes required by any defined tags, before starting the

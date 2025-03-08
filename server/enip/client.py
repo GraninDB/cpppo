@@ -1,18 +1,18 @@
 
-# 
+#
 # Cpppo -- Communication Protocol Python Parser and Originator
-# 
+#
 # Copyright (c) 2013, Hard Consulting Corporation.
-# 
+#
 # Cpppo is free software: you can redistribute it and/or modify it under the
 # terms of the GNU General Public License as published by the Free Software
 # Foundation, either version 3 of the License, or (at your option) any later
 # version.  See the LICENSE file at the top of the source tree.
-# 
+#
 # Cpppo is distributed in the hope that it will be useful, but WITHOUT ANY
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
-# 
+#
 
 from __future__ import absolute_import, print_function, division
 try:
@@ -26,7 +26,7 @@ __copyright__                   = "Copyright (c) 2013 Hard Consulting Corporatio
 __license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
 
 __all__				= ['parse_int', 'parse_path', 'parse_path_elements', 'parse_path_component',
-                                   'format_path', 'format_context', 'parse_context', 'CIP_TYPES', 'parse_operations',
+                                   'format_path', 'format_context', 'parse_context', 'parse_operations',
                                    'client', 'await_response', 'connector', 'recycle', 'main', 'ENIPStatusError' ]
 
 
@@ -54,10 +54,14 @@ import socket
 import sys
 import traceback
 import warnings
+from datetime import datetime, timezone
 
 import cpppo
 from .. import network
-from . import defaults, parser, device
+#from . import defaults, parser, device
+from . import defaults, device
+
+from . import omron_parser as parser
 
 # used to be defined here; retain for backward-compatibility...
 def parse_int( *args, **kwds ):
@@ -133,47 +137,6 @@ def parse_context( sender_context ):
     return bytes( bytearray( sender_context ).rstrip( b'\0' ))
 
 
-# 
-# client.CIP_TYPES
-# 
-#     The supported CIP data types, and their CIP 'tag_type' values, byte sizes and validators.  We
-# are generous with the "signed" types (eg. SINT, INT, DINT), and we actually allow the full
-# unsigned range, plus the negative range.  There is little risk to doing this, as all provided
-# values will fit legitimately into the data type without loss.  It does however, make acceptance of
-# automatically generated data easier, as we don't need to really know if the data is signed or
-# unsigned; just that it fits into the target data type.
-# 
-
-def int_validate( x, lo, hi ):
-    res			= int( x )
-    assert lo <= res <= hi, "Invalid %d; not in range (%d,%d)" % ( res, lo, hi)
-    return res
-
-def bool_validate( b ):
-    try:
-        res		= int( b ) != 0
-        return res
-    except ValueError:
-        pass
-    lowered = b.lower()
-    if lowered == "true":
-        return True
-    if lowered == "false":
-        return False
-    raise ValueError("Invalid %s; could not be interpreted as boolean" % b)
-
-CIP_TYPES			= {
-    'STRING':	(parser.STRING.tag_type, 0,				str ),
-    'SSTRING':	(parser.SSTRING.tag_type, 0,				str ),
-    'BOOL':	(parser.BOOL.tag_type,	parser.BOOL.struct_calcsize,	bool_validate ),
-    'REAL': 	(parser.REAL.tag_type,	parser.REAL.struct_calcsize,	float ),
-    'DINT':	(parser.DINT.tag_type,	parser.DINT.struct_calcsize,	lambda x: int_validate( x, -2**31, 2**32-1 )), # extra range
-    'UDINT':	(parser.UDINT.tag_type,	parser.UDINT.struct_calcsize,	lambda x: int_validate( x,  0,     2**32-1 )),
-    'INT':	(parser.INT.tag_type,	parser.INT.struct_calcsize,	lambda x: int_validate( x, -2**15, 2**16-1 )), # extra range
-    'UINT':	(parser.UINT.tag_type,	parser.UINT.struct_calcsize,	lambda x: int_validate( x,  0,     2**16-1 )),
-    'SINT':	(parser.SINT.tag_type,	parser.SINT.struct_calcsize,	lambda x: int_validate( x, -2**7,  2**8-1 )),  # extra range
-    'USINT':	(parser.USINT.tag_type,	parser.USINT.struct_calcsize,	lambda x: int_validate( x,  0,     2**8-1 )),
-}
 
 def parse_operations( tags, fragment=False, int_type=None, **kwds ):
     """Given a sequence of (string) tags, deduce the set of I/O desired operations, yielding each one.
@@ -230,14 +193,14 @@ def parse_operations( tags, fragment=False, int_type=None, **kwds ):
         if val:
             # Default between REAL/INT, by simply checking for '.' in the provided value(s)
             if '.' in val:
-                opr['tag_type'],size,cast = CIP_TYPES['REAL']
+                opr['tag_type'],size,cast = device.dialect.CIP_TYPES['REAL']
             else:
-                opr['tag_type'],size,cast = CIP_TYPES[int_type.strip().upper()]
+                opr['tag_type'],size,cast = device.dialect.CIP_TYPES[int_type.strip().upper()]
             # Allow an optional (TYPE)value,value,...
             if val.strip().startswith( '(' ) and ')' in val:
                 typ,val		= val.split( ')', 1 ) # Get leading: ['(TYPE', '), ...]
                 _,typ		= typ.split( '(', 1 )
-                opr['tag_type'],size,cast = CIP_TYPES[typ.strip().upper()]
+                opr['tag_type'],size,cast = device.dialect.CIP_TYPES[typ.strip().upper()]
 
             # The provided val is a comma-separated, whitespace-padded single-line list containing
             # integers, reals and quoted strings.  Perfect for using csv.reader to parse...  Not
@@ -380,7 +343,7 @@ class client( object ):
             ifce		= source_address.split( ':', 1 )
             self.ifce		= ( str( ifce[0] ), int( ifce[1] if len( ifce ) > 1 else 0 ))
 
-        # If no 'host' supplied; get from 'Address' in configuration.  Default is 
+        # If no 'host' supplied; get from 'Address' in configuration.  Default is
         if host is None:
             addr_str		= device.Object.config_override( host, 'Address', default='', section=configuration ).strip()
             host,port_cnf	= cpppo.parse_ip_port( addr_str, default=('localhost',defaults.address[1]) )
@@ -462,12 +425,11 @@ class client( object ):
         # parser. Normally, this will be a Message Router derived class (eg. logix.Logix). However,
         # for some requests (eg. Forward Open), the target is the Connection Manager; we'll
         # (temporarily) change the client.dialect while parsing these requests.
-        if device.dialect is None:
+        if self.dialect is None:
             from . import logix # Avoid recursive module load
-            device.dialect	= logix.Logix if dialect is None else dialect
-        if dialect is not None:
-            assert device.dialect is dialect, \
-                "Inconsistent EtherNet/IP dialect requested: %r (vs. default: %r)" % ( dialect, device.dialect )
+            device.dialect	= logix.Logix
+        else:
+            device.dialect  = self.dialect
 
     def __str__( self ):
         return "%s:%s[%r]" % ( self.addr[0], self.addr[1], self.session )
@@ -521,7 +483,7 @@ class client( object ):
         blocking.  Raises StopIteration (cease iterating) on EOF between frames.  Any other
         Exception indicates a client failure, and should result in the client instance being
         discarded.
-        
+
         If no input is presently available, harvest any input immediately available; terminate on
         EOF.
 
@@ -537,9 +499,9 @@ class client( object ):
 
         """
         # Ensure that the caller has gained exclusive access to this client instance using:
-        # 
+        #
         #     with <instance>:
-        # 
+        #
         # So long as the caller retains exclusive access, they may continue to attempt to parse
         # a response.  They may *only* safely release exclusive access between fully parsed
         # EtherNet/IP frames (checked in __exit__, above)
@@ -559,7 +521,7 @@ class client( object ):
                     addr[0] if addr else None, addr[1] if addr else None,
                     len( rcvd ) if rcvd is not None else 0, rcvd )
                 if rcvd is not None:
-                    # Some input (or EOF); source is empty; chain the input and drop back into 
+                    # Some input (or EOF); source is empty; chain the input and drop back into
                     # the framer engine.  It will detect a no-progress condition on EOF.  If we
                     # don't have an engine, we can signal completion right here.
                     if len( rcvd ):
@@ -588,7 +550,7 @@ class client( object ):
             if self.engine is None:
                 self.data	= cpppo.dotdict( peer=addr )
                 self.engine	= self.frame.run( source=self.source, data=self.data )
-                
+
             for mch,sta in self.engine:
                 if sta is None and self.source.peek() is None:
                     # Non-transition, and no input available; go get some -- all blocking is done
@@ -604,7 +566,7 @@ class client( object ):
 
         if self.frame.terminal:
             log.info( "EtherNet/IP   %16s:%-5d done: %s -> %10.10s; next byte %3d: %-10.10r: %r",
-                        self.addr[0], self.addr[1], self.frame.name_centered(), self.frame.current, 
+                        self.addr[0], self.addr[1], self.frame.name_centered(), self.frame.current,
                         self.source.sent, self.source.peek(), self.data )
             # Got an EtherNet/IP frame.  Return it (after parsing its payload.)
             self.engine		= None
@@ -976,14 +938,14 @@ class client( object ):
                 sender_context=sender_context, **kwds )
         return req
 
-    # 
+    #
     # ..._send -- transmit a request using the appropriate encapsulation
-    # 
+    #
     #     Depending on the class of CIP connection, various encapsulations are appropriate.  These
     # should be as close to transparent to the higher-level APIs as possible; for consistency, we'll
     # accept all of the required arguments, ignoring any that are irrelevant (in case they are
     # provided in general-purpose higher-level code).
-    # 
+    #
     def unconnected_send( self, request, route_path=None, send_path=None, timeout=None,
                           connection=None, sequence=None, # ignored
                           priority_time_tick=None, timeout_ticks=None,
@@ -1485,6 +1447,8 @@ class connector( client ):
                     val		= reply.read_frag.data
                 elif reply.status in (0x00,0x06) and 'read_tag' in reply:
                     val		= reply.read_tag.data
+                    #if reply.read_tag.type == parser.OMRDATN.tag_type:
+                    #    val = list(map(lambda x:datetime.fromtimestamp(round(x/1000000000), tz=timezone.utc), val))
                 elif reply.status in (0x00,0x06) and 'get_attribute_single' in reply:
                     val		= reply.get_attribute_single.data
                 elif reply.status in (0x00,0x06) and 'get_attributes_all' in reply:
@@ -1515,7 +1479,7 @@ class connector( client ):
 
         Each response context and service code must match the request; this detects situations where
         (for example), the C*Logix responds to a Multiple Service Packet request with a general 0x1E
-        error status to the entire Multiple Service Packet request, *not* individual responses; this 
+        error status to the entire Multiple Service Packet request, *not* individual responses; this
         mismatch cannot be determined by the collect layer.
 
         """
@@ -1529,21 +1493,21 @@ class connector( client ):
                     idx, req_ctx, rpy_ctx, parser.enip_format( op ), parser.enip_format( req ), parser.enip_format( rpy ))
             yield idx,dsc,req,rpy,sts,val
 
-    # 
+    #
     # synchronous
     # pipeline
-    # 
+    #
     #     The normal APIs for issuing transactions and harvesting the corresponding results.
-    # 
+    #
     #     The <value> yielded comes from the reply, hence there is a data list for reads, but no data
     # for writes (just a True).
     #
     #     None	-- Request failure
     #     True	-- Request successful write (no resultant data)
     #     [...]	-- Request successful read data
-    # 
+    #
     #     Use validate to post-process these results, to fill in data for reads (from the request).
-    # 
+    #
     def synchronous( self, operations, index=0, fragment=False, multiple=0, timeout=None ):
         """Issue the requested 'operations' synchronously.  Yield each harvested record.
 
@@ -1570,7 +1534,7 @@ class connector( client ):
                 except IndexError:
                     raise StopIteration
             next = __next__ # Python 2/3 compatibility
-        
+
         issuer			= self.issue( operations=operations, index=index, fragment=fragment,
                                               multiple=multiple, timeout=timeout )
         inflight		= drainable()	# We iterate over this as we append to it...
@@ -1699,21 +1663,21 @@ class connector( client ):
                 print( line )
             yield index,descr,request,reply,status,val
 
-    # 
+    #
     #     Simplified interface wrappers; accepts all keyword parameters defined for synchronous/pipeline.
-    # 
+    #
     # operate
-    # 
+    #
     #     Select the appropriate combination of pipeline/synchronous, and validate, a yield all of
     # the operations' details.
-    # 
+    #
     # results
     # process
-    # 
+    #
     #     Simple, high-level API entry point that eliminates the need to process any yielded
     # sequences, and simply returns the number of (<failures>,<transactions>), optionally printing a
     # summary of I/O performed.
-    # 
+    #
     def operate( self, operations, depth=0, printing=False, validating=False, **kwds ):
         """Operate on a sequence of I/O operations, yielding the details.  If a non-zero 'depth' is
         specified, then pipeline the requests allowing 'depth' outstanding transactions to be
@@ -1777,7 +1741,7 @@ class implicit( connector ):
 
     """
     connection_serial		= random.randint( 0, 2**16-1 )
-    def __init__( self, host, port=None, timeout=None, connection_path=None, path=None, 
+    def __init__( self, host, port=None, timeout=None, connection_path=None, path=None,
                   configuration=None, priority_time_tick=None, timeout_ticks=None,
                   O_T=None, T_O=None, O_vendor=None, O_serial=None, connection_serial=None,
                   transport_class_triggers=None, connection_timeout_multiplier=None,
@@ -1809,7 +1773,7 @@ class implicit( connector ):
                     val, name, defaults.forward_open_default.get( name ), config=config )
             path		= default_named( path,			'path' )
             connection_path	= default_named( connection_path,	'connection_path' )
-            priority_time_tick	= default_named( priority_time_tick,	'priority_time_tick' ) 
+            priority_time_tick	= default_named( priority_time_tick,	'priority_time_tick' )
             timeout_ticks	= default_named( timeout_ticks,		'timeout_ticks' )
             O_serial		= default_named( O_serial,		'O_serial' )
             O_vendor		= default_named( O_vendor,		'O_vendor' )
@@ -1917,7 +1881,7 @@ class implicit( connector ):
                 # Await the CIP response for remainder of self.timeout
                 elapsed_req	= cpppo.timer() - begun
                 data,elapsed_rpy= await_response( self, timeout=None if self.timeout is None else max( 0, self.timeout - elapsed_req ))
-            replies		= enip_replies( data ) 
+            replies		= enip_replies( data )
             if data is None: # [<replies>], None or {} (EOF), or Exception/ENIPStatusError
                 # Response to Forward Close + socket shutdown was ... silence.  This connection is no good.
                 raise Exception( "Failed to cleanly close Implicit (Connected) session after %7.3f/%7.3fs" % (
@@ -2033,10 +1997,10 @@ which is required to carry this Send/Route Path data. """ )
                      help="EtherNet/IP interface[:port] to connect to (default: %s:%d)" % (
                          defaults.address[0] or 'localhost', defaults.address[1] or 44818 ))
     ap.add_argument( '-u', '--udp', action='store_true',
-                     default=False, 
+                     default=False,
                      help="Use a UDP/IP connection (default: False)" )
     ap.add_argument( '-b', '--broadcast', action='store_true',
-                     default=False, 
+                     default=False,
                      help="Allow multiple peers, and use of broadcast address (default: False)" )
     ap.add_argument( '--no-print', action='store_false', dest='print',
                      help="Disable printing of summary of operations to stdout" )
@@ -2070,7 +2034,7 @@ which is required to carry this Send/Route Path data. """ )
                      default=False,
                      help="Access a simple (non-routing) EtherNet/IP CIP device (eg. MicroLogix)")
     ap.add_argument( '-m', '--multiple', action='store_true',
-                     default=False, 
+                     default=False,
                      help="Use Multiple Service Packet request targeting ~500 bytes (default: False)" )
     ap.add_argument( '-d', '--depth', default=1,
                      help="Pipeline requests to this depth (default: 1)" )
@@ -2090,7 +2054,7 @@ which is required to carry this Send/Route Path data. """ )
                      default=None,
                      help="Send a Legacy CIP request (specify command code) (default: None)" )
     ap.add_argument( '-P', '--profile', action='store_true',
-                     default=False, 
+                     default=False,
                      help="Activate profiling (default: False)" )
     ap.add_argument( '-c', '--connected', action='store_true',
                      default=False,
@@ -2107,7 +2071,7 @@ which is required to carry this Send/Route Path data. """ )
         3: logging.INFO,
         4: logging.DEBUG,
         }
-    cpppo.log_cfg['level']	= ( levelmap[args.verbose] 
+    cpppo.log_cfg['level']	= ( levelmap[args.verbose]
                                     if args.verbose in levelmap
                                     else logging.DEBUG )
     if args.log:

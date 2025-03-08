@@ -1,19 +1,19 @@
 #!/usr/bin/env python
 
-# 
+#
 # Cpppo -- Communication Protocol Python Parser and Originator
-# 
+#
 # Copyright (c) 2013, Hard Consulting Corporation.
-# 
+#
 # Cpppo is free software: you can redistribute it and/or modify it under the
 # terms of the GNU General Public License as published by the Free Software
 # Foundation, either version 3 of the License, or (at your option) any later
 # version.  See the LICENSE file at the top of the source tree.
-# 
+#
 # Cpppo is distributed in the hope that it will be useful, but WITHOUT ANY
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
-# 
+#
 
 from __future__ import absolute_import, print_function, division
 try:
@@ -80,7 +80,10 @@ import traceback
 
 import cpppo
 
-from . import defaults, parser, device, client
+#from . import defaults, parser, device, client
+from . import defaults, device, client
+
+from . import omron_parser as parser
 
 log				= logging.getLogger( "enip.get" )
 
@@ -110,13 +113,13 @@ def attribute_operations( paths, int_type=None, **kwds ):
         yield op
 
 
-# 
+#
 # get_attribute.proxy		-- for devices that can "route" CIP requests
 # get_attribute.proxy_simple	-- for simple end-devices (eg. sensors, actuators)
-# 
+#
 #     Access an EtherNet/IP CIP device using either generic Get Attribute{s All, Single}, or *Logix
 # Read Tag [Fragmented] services, as desired.  Data is delivered converted to target format.
-# 
+#
 class proxy( object ):
     """Monitor/control an EtherNet/IP CIP device, using either Get Attribute Single/All or Read Tag
     [Fragmented] services.  The EtherNet/IP CIP gateway is discarded and re-opened on any Exception;
@@ -126,7 +129,7 @@ class proxy( object ):
 
     The simplest way to ensure that the proxy's gateway is correctly closed, is to use its "context"
     API, which ensures via's gateway is opened, and that .close_gateway is invoked on Exception:
-    
+
         via = proxy( 'hostname' )
 
         with via:
@@ -175,13 +178,13 @@ class proxy( object ):
         "epath_single":	( parser.EPATH_single,	"EPATH_single.segment" ), # A single EPATH segment (w/ no <words> SIZE)
     }
 
-    # 
+    #
     # parameter		-- An attribute address, its underlying type(s) and units
     # PARAMETERS	-- Transformations from parameter "bare name" ==> parameter( attribute, types, units )
     # parameter_substitution -- perform parameter name to ( attribute, types, units ) transformations
-    # 
+    #
     # In order to access any defined PARAMETERS, pass
-    # 
+    #
     parameter			= collections.namedtuple(
         'parameter', [
             'attribute',	# eg. "@0x93/3/10"
@@ -208,12 +211,12 @@ class proxy( object ):
 
         If the iterable consists of a single bare name, it will be converted to a single-entry list
         before processing.
-    
+
         Transforms bare names by stripping surrounding whitespace, lowering case, and substituting
         intervening whitespace with underscores, eg.
 
         ' Output Freq ' --> parameters['output_freq']
-    
+
         Default to use the class' PARAMETERS, and default pass_thru to True.
 
         """
@@ -238,7 +241,7 @@ class proxy( object ):
                     # Don't allow plain text Tags; must be named parameters!
                     assert pass_thru, "Unrecognized parameter name: %r" % ( tag )
             yield tag
-    
+
     def __init__( self, host, port=44818, timeout=None, depth=None, multiple=None,
                   gateway_class=None, route_path=None, send_path=None,
                   priority_time_tick=None, timeout_ticks=None,
@@ -303,7 +306,7 @@ class proxy( object ):
     def open_gateway( self ):
         """Ensure that the gateway is open, in a Thread-safe fashion.  First Thread in creates the
         gateway_class instance and registers a session, and (if necessary) queries the identity of the
-        device -- all under the protection of the gateway_lock Mutex.  All gateways must use the 
+        device -- all under the protection of the gateway_lock Mutex.  All gateways must use the
         same (globally defined) device.dialect, if they specify one."""
         blocked			= cpppo.timer()
         with self.gateway_lock:
@@ -375,7 +378,7 @@ class proxy( object ):
     @staticmethod
     def is_request( req ):
         """Return True iff the given item is potentially a read/write request target:
-        
+
             <address>		-- "Tag|@<Class>/<Instance>/<Attribute>"
             ( <address>, <CIP-type> [, <units> ] )
             ( <address>, "CIP-type-name" [, <units> ] )
@@ -594,11 +597,11 @@ class proxy( object ):
         # Process all requests w/ the specified pipeline depth, Multiple Service Packet
         # configuration.  The 'idx' is the EtherNet/IP CIP request packet index; 'i' is the
         # individual I/O request index (for indexing att/typ/operations).
-        # 
+        #
         # This Thread may block here attempting to gain exclusive access to the cpppo.dfa used
         # by the cpppo.server.enip.client connector.  This uses a threading.Lock, which will raise
         # an exception on recursive use, but block appropriately on multi-Thread contention.
-        # 
+        #
         # assert not self.gateway.frame.lock.locked(), \
         #     "Attempting recursive read on %r" % ( self.gateway.frame, )
         log.info( "Acquiring gateway %r connection: %s", self.gateway,
@@ -611,7 +614,7 @@ class proxy( object ):
             for i,(idx,dsc,req,rpy,sts,val) in enumerate( connection.operate(
                     ( opr for opr,_ in operations ),
                     depth=self.depth, multiple=self.multiple, timeout=self.timeout )):
-                log.detail( "%3d (pkt %3d) %16s %-12s: %r %s", 
+                log.detail( "%3d (pkt %3d) %16s %-12s: %r %s",
                                 i, idx, dsc, sts or "OK", val,
                             repr( rpy ) if log.isEnabledFor( logging.INFO ) else '' )
                 opr,(att,typ,uni) = next( attrtypes )
@@ -625,7 +628,7 @@ class proxy( object ):
                             if typ_prs:
                                 typ = typ_prs
                         except Exception as exc:
-                            log.info( "Couldn't convert CIP type {typ_num}: {exc}".format( 
+                            log.info( "Couldn't convert CIP type {typ_num}: {exc}".format(
                                     typ_num=typ_num, exc=exc ))
                     # Also, if failure status (OK if no error, or if just not all
                     # data could be returned), we can't do any more with this value...  Also, if
@@ -638,9 +641,9 @@ class proxy( object ):
                 # all data will be parsed using it.  If a list, then the data will be sequentially
                 # parsed using each type.  Finally, the target data will be extracted from each
                 # parsed item, and added to the result.  For example, for the parsed SSTRING
-                # 
+                #
                 #     data = { "SSTRING": {"length": 3, "string": "abc"}}
-                # 
+                #
                 # we just want to return data['SSTRING.string'] == "abc"; each recognized CIP type
                 # has a data path which we'll use to extract just the result data.  If a
                 # user-defined type is supplied, of course we'll just return the full result.
@@ -763,7 +766,7 @@ which is required to carry this Send/Route Path data. """ )
                      default=5.0,
                      help="EtherNet/IP timeout (default: 5s)" )
     ap.add_argument( '-v', '--verbose', action="count",
-                     default=0, 
+                     default=0,
                      help="Display logging information." )
     ap.add_argument( '-l', '--log',
                      help="Log file, if desired" )
@@ -792,7 +795,7 @@ which is required to carry this Send/Route Path data. """ )
         3: logging.INFO,
         4: logging.DEBUG,
         }
-    cpppo.log_cfg['level']	= ( levelmap[args.verbose] 
+    cpppo.log_cfg['level']	= ( levelmap[args.verbose]
                                     if args.verbose in levelmap
                                     else logging.DEBUG )
     if args.log:
