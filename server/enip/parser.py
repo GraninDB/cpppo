@@ -147,6 +147,7 @@ class words( words_base, cpppo.state ):
 # UINT		-- Parse a 16-bit EtherNet/IP unsigned int
 # DINT		-- Parse a 32-bit EtherNet/IP   signed int
 # UDINT		-- Parse a 32-bit EtherNet/IP unsigned int
+# LINT		-- Parse a 64-bit EtherNet/IP   signed int
 #
 #     You must provide either a name or a context; if you provide neither, then both default to the
 # name of the class.  An instance of any of these types "is" a parser state machine, and has a
@@ -216,6 +217,12 @@ class DINT( TYPE ):
     """An EtherNet/IP DINT; 32-bit signed integer"""
     tag_type			= 0x00c4
     struct_format		= '<i'
+    struct_calcsize		= struct.calcsize( struct_format )
+
+class LINT( TYPE ):
+    """An EtherNet/IP LINT; 64-bit signed integer"""
+    tag_type			= 0x00c5
+    struct_format		= '<Q'
     struct_calcsize		= struct.calcsize( struct_format )
 
 class REAL( TYPE ):
@@ -1726,7 +1733,7 @@ class typed_data( cpppo.dfa ):
     WORD			= 0x00d2	# 2 byte (16-bit boolean array)
     UDINT	yes		= 0x00c8	# 4 bytes
     DWORD			= 0x00d3	# 4 byte (32-bit boolean array)
-    LINT			= 0x00c5	# 8 byte
+    LINT	yes		= 0x00c5	# 8 byte
     SSTRING	yes		= 0x00da	# 1 byte length + <length> data
     STRING	yes		= 0x00d0	# 2 byte length + <length> data (rounded up to 2 bytes)
 
@@ -1738,6 +1745,7 @@ class typed_data( cpppo.dfa ):
         INT.tag_type:		INT,
         UINT.tag_type:		UINT,
         DINT.tag_type:		DINT,
+        LINT.tag_type:		LINT,
         UDINT.tag_type:		UDINT,
         REAL.tag_type:		REAL,
         LREAL.tag_type:		LREAL,
@@ -1792,6 +1800,13 @@ class typed_data( cpppo.dfa ):
         i32p[None]		= move_if( 	'mov32bit',	source='.DINT',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=i32d )
+
+        i64d			= octets_noop(	'end64bit',
+                                                terminal=True )
+        i64d[True]	    = i64p	= LINT()
+        i64p[None]		= move_if( 	'mov64bit',	source='.LINT',
+                                           destination='.data',	initializer=lambda **kwds: [],
+                                                state=i64d )
 
         u32d			= octets_noop(	'end32bitu',
                                                 terminal=True )
@@ -1852,6 +1867,9 @@ class typed_data( cpppo.dfa ):
         slct[None]		= cpppo.decide(	'DINT',	state=i32d,
             predicate=lambda path=None, data=None, **kwds: \
                 DINT.tag_type == ( data[path+tag_type] if isinstance( tag_type, cpppo.type_str_base ) else tag_type ))
+        slct[None]		= cpppo.decide(	'LINT',	state=i64d,
+            predicate=lambda path=None, data=None, **kwds: \
+                LINT.tag_type == ( data[path+tag_type] if isinstance( tag_type, cpppo.type_str_base ) else tag_type ))
         slct[None]		= cpppo.decide(	'UDINT',state=u32d,
             predicate=lambda path=None, data=None, **kwds: \
                 UDINT.tag_type == ( data[path+tag_type] if isinstance( tag_type, cpppo.type_str_base ) else tag_type ))

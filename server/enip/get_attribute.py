@@ -168,6 +168,7 @@ class proxy( object ):
         "int":		( parser.INT,	"INT" ),
         "uint":		( parser.UINT,	"UINT" ),
         "dint":		( parser.DINT,	"DINT" ),
+        "lint":		( parser.LINT,	"LINT" ),
         "udint":	( parser.UDINT,	"UDINT" ),
         "bool":		( parser.BOOL,	"BOOL" ),
         "word":		( parser.WORD,	"WORD" ),

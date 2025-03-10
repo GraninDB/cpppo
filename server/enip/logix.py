@@ -1,18 +1,18 @@
 
-# 
+#
 # Cpppo -- Communication Protocol Python Parser and Originator
-# 
+#
 # Copyright (c) 2013, Hard Consulting Corporation.
-# 
+#
 # Cpppo is free software: you can redistribute it and/or modify it under the
 # terms of the GNU General Public License as published by the Free Software
 # Foundation, either version 3 of the License, or (at your option) any later
 # version.  See the LICENSE file at the top of the source tree.
-# 
+#
 # Cpppo is distributed in the hope that it will be useful, but WITHOUT ANY
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
-# 
+#
 
 from __future__ import absolute_import, print_function, division
 try:
@@ -43,7 +43,7 @@ from .device import ( Object, Attribute,
                       Message_Router, Connection_Manager, Identity, TCPIP, Logical_Segments,
                       resolve_element, resolve_tag, resolve, redirect_tag, lookup )
 from . import ucmm
-from .parser import ( BOOL, UDINT, DINT, UINT, INT, USINT, SINT, REAL, LREAL, EPATH, typed_data,
+from .parser import ( BOOL, UDINT, DINT, LINT, UINT, INT, USINT, SINT, REAL, LREAL, EPATH, typed_data,
                       move_if, octets_drop, octets_noop, enip_format, status )
 
 log				= logging.getLogger( "enip.lgx" )
@@ -62,27 +62,27 @@ log				= logging.getLogger( "enip.lgx" )
 #         0x00, 0x00, 0xb2, 0x00, 0x06, 0x00, 0x01, 0x02, #/* ........ */
 #         0x20, 0x66, 0x24, 0x01                          #/*  f$. */
 #     ]))
-# 
+#
 #     Parsed:
 #     {
-#         "enip.CIP.send_data.CPF.count": 2, 
-#         "enip.CIP.send_data.CPF.item[0].length": 0, 
-#         "enip.CIP.send_data.CPF.item[0].type_id": 0, 
-#         "enip.CIP.send_data.CPF.item[1].length": 6, 
-#         "enip.CIP.send_data.CPF.item[1].type_id": 178, 
-#         "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.segment[0].class": 102, 
-#         "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.segment[1].instance": 1, 
-#         "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.size": 2, 
-#         "enip.CIP.send_data.CPF.item[1].unconnected_send.service": 1, 
-#         "enip.CIP.send_data.interface": 0, 
-#         "enip.CIP.send_data.timeout": 5, 
-#         "enip.command": 111, 
-#         "enip.length": 22, 
-#         "enip.options": 0, 
-#         "enip.session_handle": 285351425, 
+#         "enip.CIP.send_data.CPF.count": 2,
+#         "enip.CIP.send_data.CPF.item[0].length": 0,
+#         "enip.CIP.send_data.CPF.item[0].type_id": 0,
+#         "enip.CIP.send_data.CPF.item[1].length": 6,
+#         "enip.CIP.send_data.CPF.item[1].type_id": 178,
+#         "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.segment[0].class": 102,
+#         "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.segment[1].instance": 1,
+#         "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.size": 2,
+#         "enip.CIP.send_data.CPF.item[1].unconnected_send.service": 1,
+#         "enip.CIP.send_data.interface": 0,
+#         "enip.CIP.send_data.timeout": 5,
+#         "enip.command": 111,
+#         "enip.length": 22,
+#         "enip.options": 0,
+#         "enip.session_handle": 285351425,
 #         "enip.status": 0,
 #     }
-# 
+#
 # Response:
 #     # pkt10
 #     # "10","0.247332000","10.220.104.180","192.168.222.128","CIP","116","Success"
@@ -93,7 +93,7 @@ log				= logging.getLogger( "enip.lgx" )
 #         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, #/* ........ */
 #         0x00, 0x00, 0x05, 0x00, 0x02, 0x00, 0x00, 0x00, #/* ........ */
 #         0x00, 0x00, 0xb2, 0x00, 0x16, 0x00, 0x81,
-# 
+#
 #                                                   0x00, #/* ........ */
 # >       0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, #/* ........ */
 # >       0x2d, 0x00, 0x01, 0x00, 0x01, 0x01, 0xb1, 0x2a, #/* -......* */
@@ -126,7 +126,7 @@ class Unknown_Object( Object ):
 
 class Logix( Message_Router ):
     """A Logix Controller implementation of the CIP Message Router (Class 0x02, Instance 1).  This
-    object is targeted by the Connection Manager, to parse and process incoming requests.  
+    object is targeted by the Connection Manager, to parse and process incoming requests.
 
     The target Object of the command may not be an Instance of this Object; however, for the
     Logix-specific commands (eg. Read/Write Tag [Fragmented]), it should be (or it won't be able to
@@ -161,29 +161,29 @@ class Logix( Message_Router ):
         data.path (perhaps containing an element offset) and a data.<context>.elements (optional)
         count to read and (optional) data.<context>.offset byte offset into the result to begin
         returning data after, compute the attribute elements to (begin,end] the result.
-    
+
         Find the actual beginning/ending element, and check data.read_{t,fr}ag.data.  For example,
         we could read 1000 elements starting at element 30, then starting at requested offset of 900
         (bytes); assuming a maximum element capacity of 150, the actual beginning element would be
         30 + 450 == 480, and the ending element would be 480 + 150 == 630 (the element beyond ).
-    
+
         Ensure we reduce the requested elements count as we advance due to byte offset.
-    
+
         Basically, the number of bytes returned using this service is calculated by taking the
         Number of elements to read and subtracting the byte offset. As an example I am going to
         request elements 0-29 and 40-69 from an array of 16 bit integers.
-    
+
         To request elements 0-29 the offset starts at 0 and the number of elements to read is 30.
         To request elements 40-69 the offset starts at 80 and the number of elements to read is 70
         (the offset is 80 because we are doing 2 byte data types).
-    
+
         *Logix internally determines the correct number of elements to return by subtracting the
         offset from the number of elements requested.
 
         """
         assert data.service in (self.RD_TAG_RPY,self.RD_FRG_RPY,self.WR_TAG_RPY,self.WR_FRG_RPY), \
             "Unable to calculate element range for unknown service: %d" % ( data.service )
-        index			= resolve_element( data.path )	
+        index			= resolve_element( data.path )
         assert type( index ) is tuple and len( index ) == 1, \
             "Unsupported/Multi-dimensional index: %s" % index
         siz			= attribute.parser.struct_calcsize
@@ -241,7 +241,7 @@ class Logix( Message_Router ):
         if log.isEnabledFor( logging.DETAIL ):
             log.detail( "%s Request: %s", self, enip_format( data ))
         # This request is for this Object.
-        
+
         # Pick out our services added at this level.  If not recognized, let superclass try; it'll
         # return an appropriate error code if not recognized.
         if ( data.get( 'service' ) == self.RD_TAG_REQ
@@ -267,7 +267,7 @@ class Logix( Message_Router ):
         # It is a recognized request.  Set the data.status to the appropriate error code, should a
         # failure occur at that location during processing.  We will be returning a reply beyond
         # this point; any exceptions generated will be captured, logged and an appropriate reply
-        # .status error code returned.  
+        # .status error code returned.
 
         # For Reads:
         # Error Code	Extended Error	Description of Error
@@ -305,7 +305,7 @@ class Logix( Message_Router ):
                     attribute.parser.__class__.__name__, self.service[data.service] )
 
             if data.service in (self.RD_TAG_RPY, self.RD_FRG_RPY):
-                # Read Tag [Fragmented] Reply.  Fill in .data and .type 
+                # Read Tag [Fragmented] Reply.  Fill in .data and .type
                 context		= 'read_frag' if data.service == self.RD_FRG_RPY else 'read_tag'
                 data[context].type= attribute.parser.tag_type
             elif data.service in (self.WR_TAG_RPY, self.WR_FRG_RPY):
@@ -331,6 +331,11 @@ class Logix( Message_Router ):
                                          SINT.tag_type, USINT.tag_type,
                                           INT.tag_type,  UINT.tag_type,
                                          DINT.tag_type, UDINT.tag_type),
+                    LINT.tag_type:	(BOOL.tag_type,
+                                         SINT.tag_type, USINT.tag_type,
+                                          INT.tag_type,  UINT.tag_type,
+                                         DINT.tag_type, UDINT.tag_type,
+                                         LINT.tag_type),
                     INT.tag_type:	(BOOL.tag_type,
                                          SINT.tag_type, USINT.tag_type,
                                          INT.tag_type,   UINT.tag_type),
@@ -339,7 +344,7 @@ class Logix( Message_Router ):
                 }
                 assert data[context].type in allowed_tag_types.get(
                     attribute.parser.tag_type, (attribute.parser.tag_type,) ), \
-                    "Tag type %d in request doesn't fit within Attribute type %d" % ( 
+                    "Tag type %d in request doesn't fit within Attribute type %d" % (
                         data[context].type, attribute.parser.tag_type )
             else:
                 raise AssertionError( "Unhandled Service Reply" )
@@ -402,7 +407,7 @@ class Logix( Message_Router ):
         """Expects to find .service and/or .<logix-command>, and produces the request/reply encoded to
         bytes.  Defaults to produce the request, if no .service specified, and just
         .read/write_tag/frag found.
-         
+
         A .status of 0x06 in the read_tag/frag reply indicates that more data is available; it is
         not a failure.
 
@@ -425,7 +430,7 @@ class Logix( Message_Router ):
             result	       += USINT.produce(	data.service )
             result	       += EPATH.produce(	data.path )
             result	       += UINT.produce(		data.write_tag.type )
-            result	       += UINT.produce(		data.write_tag.setdefault( 
+            result	       += UINT.produce(		data.write_tag.setdefault(
                 'elements', len( data.write_tag.data )))
             result	       += typed_data.produce(	data.write_tag )
         elif ( data.get( 'service') == cls.WR_FRG_REQ
@@ -642,11 +647,11 @@ def setup_tag( key, val ):
 
         if not attribute:
             # No Attribute found; either specified path but no Attribute yet at that path,
-            # or no specified path. 
+            # or no specified path.
             attribute		= instance.attribute[str(att)] \
                                 = val.attribute
         log.normal( "Set Tag %-14s%-10s: %-24s Instance Added: %s",
-                    key, "@%s/%s/%s" % ( cls, ins, att ), instance, 
+                    key, "@%s/%s/%s" % ( cls, ins, att ), instance,
                     attribute if log.isEnabledFor( logging.INFO ) else misc.reprlib.repr( attribute ))
 
         # Finally, set tag 'key' to point to the (now existing) Class, Instance, Attribute
@@ -705,7 +710,7 @@ def setup( **kwds ):
             cm			= kwds.get( 'connection_manager_class',	Connection_Manager )
             if cm:
                 cm( instance_id=1 )		# Class 0x06, Instance 1
-        
+
         if not lookup( 0x66, 1 ):
             Unknown_Object( instance_id=1 )	# Class 0x66, Instance 1 -- Unknown purpose in Logix Controller
 
@@ -748,48 +753,48 @@ def process( addr, data, **kwds ):
     exception when a fatal protocol processing error occurs, and the session should be terminated
     forcefully.
 
-    When a connection is closed, a final invocation with 
+    When a connection is closed, a final invocation with
 
     This roughly corresponds to the CIP Connection "client" object functionality.  We parse the raw
     EtherNet/IP encapsulation to get something like this Register request, in data.request:
 
-        "enip.command": 101, 
+        "enip.command": 101,
         "enip.input": "array('c', '\\x01\\x00\\x00\\x00')",
-        "enip.length": 4, 
-        "enip.options": 0, 
-        "enip.session_handle": 0, 
+        "enip.length": 4,
+        "enip.options": 0,
+        "enip.session_handle": 0,
         "enip.status": 0
         "enip.length": 4
 
 
     This is parsed by the Connection Manager:
 
-        "enip.CIP.register.options": 0, 
-        "enip.CIP.register.protocol_version": 1, 
+        "enip.CIP.register.options": 0,
+        "enip.CIP.register.protocol_version": 1,
 
     Other requests such as:
 
-        "enip.command": 111, 
-        "enip.input": "array('c', '\\x00\\x00\\x00\\x00\\x05\\x00\\x02\\x00\\x00\\x00\\x00\\x00\\xb2\\x00\\x06\\x00\\x01\\x02 f$\\x01')", 
-        "enip.length": 22, 
-        "enip.options": 0, 
-        "enip.sender_context.input": "array('c', '\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00')", 
-        "enip.session_handle": 285351425, 
+        "enip.command": 111,
+        "enip.input": "array('c', '\\x00\\x00\\x00\\x00\\x05\\x00\\x02\\x00\\x00\\x00\\x00\\x00\\xb2\\x00\\x06\\x00\\x01\\x02 f$\\x01')",
+        "enip.length": 22,
+        "enip.options": 0,
+        "enip.sender_context.input": "array('c', '\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00')",
+        "enip.session_handle": 285351425,
         "enip.status": 0
 
     are parsed by the Connection Manager, and contain CPF entries requiring further processing by the Unconnected Message
     Manager (UCMM):
 
-        "enip.CIP.send_data.CPF.count": 2, 
-        "enip.CIP.send_data.CPF.item[0].length": 0, 
-        "enip.CIP.send_data.CPF.item[0].type_id": 0, 
-        "enip.CIP.send_data.CPF.item[1].length": 6, 
-        "enip.CIP.send_data.CPF.item[1].type_id": 178, 
-        "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.segment[0].class": 102, 
-        "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.segment[1].instance": 1, 
-        "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.size": 2, 
-        "enip.CIP.send_data.CPF.item[1].unconnected_send.service": 1, 
-        "enip.CIP.send_data.interface": 0, 
+        "enip.CIP.send_data.CPF.count": 2,
+        "enip.CIP.send_data.CPF.item[0].length": 0,
+        "enip.CIP.send_data.CPF.item[0].type_id": 0,
+        "enip.CIP.send_data.CPF.item[1].length": 6,
+        "enip.CIP.send_data.CPF.item[1].type_id": 178,
+        "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.segment[0].class": 102,
+        "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.segment[1].instance": 1,
+        "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.size": 2,
+        "enip.CIP.send_data.CPF.item[1].unconnected_send.service": 1,
+        "enip.CIP.send_data.interface": 0,
         "enip.CIP.send_data.timeout": 5,
 
 
@@ -812,7 +817,7 @@ def process( addr, data, **kwds ):
             data.request	= {}
         if data.request:
             data.request.addr	= addr
-        
+
         if 'enip' in data.request:
             # Some requests have no encapsulated CIP payload (eg. empty ListServices requests)
             if 'input' in data.request.enip:
