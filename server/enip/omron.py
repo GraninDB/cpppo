@@ -45,7 +45,7 @@ from .device import ( Object, Attribute,
                       Message_Router, Connection_Manager, Identity, TCPIP, Logical_Segments,
                       resolve_element, resolve_tag, resolve, redirect_tag, lookup )
 from . import ucmm
-from .omron_parser import ( UDINT, DINT, UINT, INT, USINT, SINT, REAL, EPATH, STRING, SSTRING, typed_data,
+from .omron_parser import ( UDINT, DINT, UINT, INT, USINT, SINT, REAL, LREAL, EPATH, STRING, SSTRING, typed_data,
                       move_if, octets_drop, octets_noop, enip_format, status )
 
 from .omron_parser import ( BOOL, OMRDATN )
@@ -94,6 +94,7 @@ CIP_TYPES			= {
     'SSTRING':	(SSTRING.tag_type,  0,                          str ),
     'BOOL':	    (BOOL.tag_type,	    BOOL.struct_calcsize,       bool_validate ),
     'REAL': 	(REAL.tag_type,     REAL.struct_calcsize,	    float ),
+    'LREAL': 	(LREAL.tag_type,	LREAL.struct_calcsize,	    float ),
     'DINT':	    (DINT.tag_type,     DINT.struct_calcsize,	    lambda x: int_validate( x, -2**31, 2**32-1 )), # extra range
     'UDINT':	(UDINT.tag_type,    UDINT.struct_calcsize,	    lambda x: int_validate( x,  0,     2**32-1 )),
     'INT':	    (INT.tag_type,      INT.struct_calcsize,	    lambda x: int_validate( x, -2**15, 2**16-1 )), # extra range
@@ -377,6 +378,11 @@ class Omron( Message_Router ):
                                               INT.tag_type,  UINT.tag_type,
                                              DINT.tag_type, UDINT.tag_type,
                                              REAL.tag_type),
+                    LREAL.tag_type:	    (BOOL.tag_type,
+                                         SINT.tag_type, USINT.tag_type,
+                                          INT.tag_type,  UINT.tag_type,
+                                         DINT.tag_type, UDINT.tag_type,
+                                         REAL.tag_type, LREAL.tag_type),
                     DINT.tag_type:	    (BOOL.tag_type,
                                              SINT.tag_type, USINT.tag_type,
                                               INT.tag_type,  UINT.tag_type,

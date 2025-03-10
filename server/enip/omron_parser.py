@@ -43,7 +43,7 @@ import cpppo
 
 from .parser import octets_base, octets, octets_encode, octets_struct, octets_noop, \
                     octets_drop, words_base, words, TYPE, STRUCT, UDINT, UDINT_network, SINT, USINT, INT, \
-                    UINT, DINT, REAL, SSTRING, STRING, INT_network, UINT_network, WORD, IPADDR_network, enip_format, \
+                    UINT, DINT, REAL, LREAL, SSTRING, STRING, INT_network, UINT_network, WORD, IPADDR_network, enip_format, \
                     EPATH, EPATH_padded, move_if, route_path, legacy_CPF_0x0001, connection_ID, unconnected_send, \
                     communications_service, identity_object, send_data, register, unregister, CPF, CIP, status, \
                     enip_machine, enip_encode
@@ -84,6 +84,7 @@ class typed_data( common_typed_data ):
     INT		    yes		= 0x00c3	# 2 bytes
     DINT	    yes		= 0x00c4	# 4 bytes
     REAL	    yes		= 0x00ca	# 4 bytes
+    LREAL       yes		= 0x00cb	# 8 bytes  (!!! python side - float)
     USINT	    yes		= 0x00c6	# 1 byte
     UINT	    yes		= 0x00c7	# 2 bytes
     WORD			    = 0x00d2	# 2 byte (16-bit boolean array)
@@ -103,6 +104,7 @@ class typed_data( common_typed_data ):
         DINT.tag_type:		DINT,
         UDINT.tag_type:		UDINT,
         REAL.tag_type:		REAL,
+        LREAL.tag_type:		LREAL,
         SSTRING.tag_type:	SSTRING,
         STRING.tag_type:	STRING,
         OMRDATN.tag_type:	OMRDATN,
@@ -116,65 +118,73 @@ class typed_data( common_typed_data ):
 
         i_8d			= octets_noop(	'end_8bit',
                                                 terminal=True )
-        i_8d[True]	= i_8p	= SINT()
+        i_8d[True]	    = i_8p	= SINT()
         i_8p[None]		= move_if( 	'mov_8bit',	source='.SINT',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=i_8d )
 
         u_8d			= octets_noop(	'end_8bitu',
                                                 terminal=True )
-        u_8d[True]	= u_8p	= USINT()
+        u_8d[True]	    = u_8p	= USINT()
         u_8p[None]		= move_if( 	'mov_8bitu',	source='.USINT',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=u_8d )
 
         u_1d			= octets_noop(	'end1bitu',
                                                 terminal=True )
-        u_1d[True]	= u_1p	= BOOL()
+        u_1d[True]	    = u_1p	= BOOL()
         u_1p[None]		= move_if( 	'mov1bitu',	source='.BOOL',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=u_1d )
 
         i16d			= octets_noop(	'end16bit',
                                                 terminal=True )
-        i16d[True]	= i16p	= INT()
+        i16d[True]	    = i16p	= INT()
         i16p[None]		= move_if( 	'mov16bit',	source='.INT',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=i16d )
 
         u16d			= octets_noop(	'end16bitu',
                                                 terminal=True )
-        u16d[True]	= u16p	= UINT()
+        u16d[True]	    = u16p	= UINT()
         u16p[None]		= move_if( 	'mov16bitu',	source='.UINT',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=u16d )
 
         i32d			= octets_noop(	'end32bit',
                                                 terminal=True )
-        i32d[True]	= i32p	= DINT()
+        i32d[True]	    = i32p	= DINT()
         i32p[None]		= move_if( 	'mov32bit',	source='.DINT',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=i32d )
 
         u32d			= octets_noop(	'end32bitu',
                                                 terminal=True )
-        u32d[True]	= u32p	= UDINT()
+        u32d[True]	    = u32p	= UDINT()
         u32p[None]		= move_if( 	'mov32bitu',	source='.UDINT',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=u32d )
 
         fltd			= octets_noop(	'endfloat',
                                                 terminal=True )
-        fltd[True]	= fltp	= REAL()
+        fltd[True]	    = fltp	= REAL()
         fltp[None]		= move_if( 	'movfloat',	source='.REAL',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=fltd )
+
+        dbld			= octets_noop(	'enddouble',
+                                                 terminal=True )
+        dbld[True]	    = dblp	= LREAL()
+        dblp[None]		= move_if( 	'movdouble',	source='.LREAL',
+                                            destination='.data',	initializer=lambda **kwds: [],
+                                                 state=dbld )
+
         # Since a parsed "[S]STRING": { "string": "abc", "length": 3 } is multiple layers deep, and we
         # want to completely eliminate the target container in preparation for the next loop, we'll
         # need to move it up one layer, and then into the final target.
         sstd			= octets_noop(	'endsstring',
                                                 terminal=True )
-        sstd[True]	= sstp	= SSTRING()
+        sstd[True]	    = sstp	= SSTRING()
         sstp[None]		= move_if( 	'movsstrings',	source='.SSTRING.string',
                                                 destination='.SSTRING' )
         sstp[None]		= move_if( 	'movsstring',	source='.SSTRING',
@@ -183,7 +193,7 @@ class typed_data( common_typed_data ):
 
         sttd			= octets_noop(	'end_string',
                                                 terminal=True )
-        sttd[True]	= sttp	= STRING()
+        sttd[True]	    = sttp	= STRING()
         sttp[None]		= move_if( 	'mov_strings',	source='.STRING.string',
                                                 destination='.STRING' )
         sttp[None]		= move_if( 	'mov_string',	source='.STRING',
@@ -220,6 +230,9 @@ class typed_data( common_typed_data ):
         slct[None]		= cpppo.decide(	'REAL',	state=fltd,
             predicate=lambda path=None, data=None, **kwds: \
                 REAL.tag_type == ( data[path+tag_type] if isinstance( tag_type, cpppo.type_str_base ) else tag_type ))
+        slct[None]		= cpppo.decide(	'LREAL',	state=dbld,
+             predicate=lambda path=None, data=None, **kwds: \
+                LREAL.tag_type == ( data[path+tag_type] if isinstance( tag_type, cpppo.type_str_base ) else tag_type ))
         slct[None]		= cpppo.decide(	'SSTRING', state=sstd,
             predicate=lambda path=None, data=None, **kwds: \
                 SSTRING.tag_type == ( data[path+tag_type] if isinstance( tag_type, cpppo.type_str_base ) else tag_type ))

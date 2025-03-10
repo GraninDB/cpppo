@@ -36,9 +36,9 @@ import threading
 import traceback
 
 from ...dotdict import dotdict
-#from . import parser, device, client
 from . import device, client
 
+#from . import parser as parser
 from . import omron_parser as parser
 
 log				= logging.getLogger( "enip.ucmm" )

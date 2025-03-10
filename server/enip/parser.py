@@ -1,17 +1,17 @@
-# 
+#
 # Cpppo -- Communication Protocol Python Parser and Originator
-# 
+#
 # Copyright (c) 2013, Hard Consulting Corporation.
-# 
+#
 # Cpppo is free software: you can redistribute it and/or modify it under the
 # terms of the GNU General Public License as published by the Free Software
 # Foundation, either version 3 of the License, or (at your option) any later
 # version.  See the LICENSE file at the top of the source tree.
-# 
+#
 # Cpppo is distributed in the hope that it will be useful, but WITHOUT ANY
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
-# 
+#
 
 from __future__ import absolute_import, print_function, division
 try:
@@ -43,17 +43,17 @@ import cpppo
 
 log				= logging.getLogger( "enip.srv" )
 
-# 
+#
 # octets_base	-- A dfa_base that defaults to scan octets from bytes data
 # octets	-- Scans octets to <context>.input array
 # octets_encode	--   and converts array of octets back to a bytes string
 # octets_struct	-- Scans octets sufficient to fulfill struct 'format', and parses
 # words_base	-- A dfa_base that default to scan octet pairs (words) from bytes data
 # words		-- Scands words into <context>.input array
-# 
+#
 #     You must provide either a name or a context; if you provide neither, then both default to the
 # name of the class.
-# 
+#
 class octets_base( cpppo.dfa_base ):
     """Scan 'repeat' octets (default: 1), using an instance of the provided octets_state class as the
     sub-machine 'initial' state.  The sub-machine has no outgoing transitions, and will terminate
@@ -72,7 +72,7 @@ class octets_base( cpppo.dfa_base ):
         super( octets_base, self ).__init__( name=name, initial=octets_state(
             name=octets_name, terminal=True, alphabet=octets_alphabet, encoder=octets_encoder,
             typecode=octets_typecode, extension=octets_extension ), **kwds )
-   
+
 
 class octets( octets_base, cpppo.state ):
     """Scans 'repeat' octets into <context>.input using a state_input sub-machine (by default), but
@@ -94,7 +94,7 @@ class octets_struct( octets_base, cpppo.state_struct ):
     def __init__( self, name=None, format=None, **kwds ):
         if format is not None:
             assert isinstance( format, cpppo.type_str_base ), "Expected a struct 'format', found: %r" % format
-        super( octets_struct, self ).__init__( name=name, format=format, 
+        super( octets_struct, self ).__init__( name=name, format=format,
             repeat=struct.calcsize( self.struct_format if format is None else format ),
                                                **kwds )
 
@@ -111,7 +111,7 @@ class octets_drop( octets_base, cpppo.state ):
     def __init__( self, name=None, octets_state=cpppo.state_drop, **kwds ):
         super( octets_drop, self ).__init__(
             name=name, octets_name="drop", octets_state=octets_state, **kwds )
-        
+
 
 class words_base( cpppo.dfa_base ):
     """Scan 'repeat' 2-byte words (default: 1), convenient when sizes are specified in words."""
@@ -130,7 +130,7 @@ class words_base( cpppo.dfa_base ):
             name="byte1", alphabet=words_alphabet, encoder=words_encoder,
             typecode=words_typecode, terminal=True )
         super( words_base, self ).__init__( name=name, initial=byt0, **kwds )
-   
+
 
 class words( words_base, cpppo.state ):
     """Scans 'repeat' words into <context>.input using a state_input sub-machine (by default), but
@@ -138,29 +138,29 @@ class words( words_base, cpppo.state ):
     pass
 
 
-# 
+#
 # The basic EtherNet/IP CIP protocol data types
-# 
-# USINT		-- Parse an 8-bit EtherNet/IP unsigned int 
+#
+# USINT		-- Parse an 8-bit EtherNet/IP unsigned int
 # USINT.produce	--   and convert a value back to a 8-bit EtherNet/IP unsigned int
-# INT		-- Parse a 16-bit EtherNet/IP   signed int 
-# UINT		-- Parse a 16-bit EtherNet/IP unsigned int 
-# DINT		-- Parse a 32-bit EtherNet/IP   signed int 
-# UDINT		-- Parse a 32-bit EtherNet/IP unsigned int 
-# 
+# INT		-- Parse a 16-bit EtherNet/IP   signed int
+# UINT		-- Parse a 16-bit EtherNet/IP unsigned int
+# DINT		-- Parse a 32-bit EtherNet/IP   signed int
+# UDINT		-- Parse a 32-bit EtherNet/IP unsigned int
+#
 #     You must provide either a name or a context; if you provide neither, then both default to the
 # name of the class.  An instance of any of these types "is" a parser state machine, and has a
 # produce method that will re-produce the bytes stream from a (previously parsed) structure.  All
 # the simple data types are derived from TYPE, and simply drive from cpppo.state_struct to directly
 # parse the data value into the provided context.
-# 
+#
 #     More complex data types are derived from STRUCT, are derived from cpppo.dfa, and require a
 # state machine to be constructed to parse the data.
-# 
+#
 #     Any EtherNet/IP type based on TYPE has class-level .struct_format and a
 # .struct_calcsize attribute; its size in bytes (we do not employ the capability
 # of octets_struct and state_struct to have a custom instance-level format).
-# 
+#
 class TYPE( octets_struct ):
     """An EtherNet/IP data type"""
     def __init__( self, name=None, **kwds ):
@@ -223,6 +223,12 @@ class REAL( TYPE ):
     tag_type			= 0x00ca # 202
     struct_format		= '<f'
     struct_calcsize		= struct.calcsize( struct_format )
+
+class LREAL( TYPE ):
+     """An EtherNet/IP INT; 64-bit double"""
+     tag_type			= 0x00cb # 203
+     struct_format		= '<d'
+     struct_calcsize		= struct.calcsize( struct_format )
 
 # Some network byte-order types that are occasionally used in parsing
 class UINT_network( TYPE ):
@@ -290,7 +296,7 @@ class SSTRING( STRUCT ):
 
         """
         result			= b''
-        
+
         if isinstance( value, cpppo.type_str_base ):
             value		= cpppo.dotdict( {'string': value } )
 
@@ -350,11 +356,11 @@ class STRING( STRUCT ):
     def produce( cls, value ):
         """Truncate or NUL-fill the provided .string to the given .length (if provided and not None).
         Then, emit the (two byte) length+string+pad.  Accepts either a {.length: ..., .string:... }
-        dotdict, or a plain string.  
+        dotdict, or a plain string.
 
         """
         result			= b''
-        
+
         if isinstance( value, cpppo.type_str_base ):
             value		= cpppo.dotdict( {'string': value } )
 
@@ -469,15 +475,15 @@ class IFACEADDRS( STRUCT ):
         return result
 
 
-# 
-# enip_header	-- Parse an EtherNet/IP header only 
+#
+# enip_header	-- Parse an EtherNet/IP header only
 # enip_machine	-- Parses an EtherNet/IP header and encapsulated data payload
 # enip_encode	--   and convert parsed EtherNet/IP data back into a message
-# 
+#
 class enip_header( cpppo.dfa ):
     """Scans either a complete EtherNet/IP encapsulation header, or nothing (EOF), into the context
     (default 'header'):
-    
+
         .header.command			UINT         2
         .header.length			UINT         2
         .header.session_handle		UDINT        4
@@ -547,7 +553,7 @@ def enip_encode( data ):
         octets_encode(	data.input ) if 'input' in data else b'',
     ])
     return result
-    
+
 def enip_format( data, sort_keys=False ):
     """Format a decoded EtherNet/IP data bundle in a (more) human-readable form.  Note that sort_keys=True
     will not work as expected for keys which contain indices: the order of keys like:
@@ -561,13 +567,13 @@ def enip_format( data, sort_keys=False ):
     """
     return json.dumps( data, indent=4, sort_keys=sort_keys, default=lambda obj: repr( obj ))
 
-# 
+#
 # EtherNet/IP CIP Parsing
-# 
+#
 # See Vol2_1.14.pdf, Chapter 3-2.1 Unconnected Messages, for a simplified overview of parsing.  We
 # parse the SendRRData, the CPF encapsulation, and the CPF Null Address and [Un]connected Data
 # items, and finally the CIP Message Router Request from the second CPF item.
-# 
+#
 
 class move_if( cpppo.decide ):
     """If the predicate is True (the default), then move (either append or assign) data[path+source]
@@ -627,7 +633,7 @@ class EPATH( cpppo.dfa ):
             { 'symbolic':   '...' }, [{ 'symbolic': '...' }, ...]
             { 'port':       #, link #/'1.2.3.4' },
          ]
-         .EPATH.segment__... temp 
+         .EPATH.segment__... temp
 
     Also works as a Route Path (which has a pad after size), by setting padsize=True.
 
@@ -716,7 +722,7 @@ class EPATH( cpppo.dfa ):
                                     state=octets_noop( 'done', terminal=True ) if self.SINGLE else pseg )
 
         # Wire each different segment type parser between pseg and pmov
-        
+
         # 0x28 == 001 010 00 Class ID,  8-bit
         # 0x29 == 001 010 01 Class ID, 16-bit
         # 0x2A == 001 010 11 Class ID, 32-bit
@@ -790,11 +796,11 @@ class EPATH( cpppo.dfa ):
 
 
         # Route Path port/link-address.  See Vol 1-3.13, Table C-1.3 Port Segment Encoding.
-        # segment:  0b000spppp 
+        # segment:  0b000spppp
         #                |\\\\+-> port number 0x01-0x0E; 0x0F=>extended
         #                |
         #                +------> link size+address; 0=>numeric, 1=>size+string
-        # 
+        #
         def port_fix( path=None, data=None, **kwds ):
             """Discard port values above 0x0F; return True (transition) if remaining port value is 0x0F
             (Optional Extended port number > 0x0E)"""
@@ -873,7 +879,7 @@ class EPATH( cpppo.dfa ):
         pabg			= UINT(		'port_abg',	context='port' )
         pabg[None]		= adrv
 
-        # 
+        #
         padr[True]	= adrl	= USINT(	'link_len',	context='link.length' )
         adrl[None]		= cpppo.decide(	'port_afix', 	predicate=port_fix,
                                                 state=pabg )
@@ -906,10 +912,10 @@ class EPATH( cpppo.dfa ):
         """Produce an encoded EtherNet/IP EPATH message from the supplied path data.  For example,
         here is an encoding a 8-bit instance ID 0x06, and ending with a 32-bit element ID
         0x04030201:
-    
+
            byte:	0	1	2    ... N-6	N-5	N-4	N-3	N-2	N-1	N
                     <N/2>	0x24	0x06 ... 0x25	0x00	0x01	0x02	0x03	0x04
-    
+
         Optionally pad the size (eg. for Route Paths).
 
         An Falsey 'data' results in an EPATH indicating a 0 size.
@@ -1007,7 +1013,7 @@ class EPATH_single( EPATH ):
 
 
 class route_path( EPATH_padded ):
-    """Unconnected message route path.  
+    """Unconnected message route path.
 
         .route_path.size		USINT		1 (in words)
         (pad)				USINT		1 (pad)
@@ -1119,7 +1125,7 @@ class communications_service( cpppo.dfa ):
     """
     def __init__( self, name=None, **kwds ):
         name 			= name or kwds.setdefault( 'context', self.__class__.__name__ )
-        
+
         vers			= UINT(	context='version' )
         vers[True]	= capa	= UINT(	context='capability' )
 
@@ -1204,7 +1210,7 @@ class identity_object( cpppo.dfa ):
     """
     def __init__( self, name=None, **kwds ):
         name			= name or kwds.setdefault( 'context', self.__class__.__name__ )
-        
+
         vers			= UINT(	context='version' )
         vers[True]	= sfam	= INT_network(
                                         context='sin_family' )
@@ -1293,7 +1299,7 @@ class legacy_CPF_0x0001( cpppo.dfa ):
     """
     def __init__( self, name=None, **kwds ):
         name			= name or kwds.setdefault( 'context', self.__class__.__name__ )
-        
+
         vers			= UINT(	context='version' )
         vers[True]	= unkn	= UINT(	context='unknown_1' )
         unkn[True]	= sfam	= INT_network(
@@ -1398,7 +1404,7 @@ class CPF( cpppo.dfa ):
 
     Parse the count, and then each CPF item into CPF.item_temp, and (after parsing) moves it to
     CPF.item[x].  If count is 0, then no items are parsed, and an empty item == [] list is returned.
-    
+
 
     A dictionary of parsers for various CPF types must be provided.  Any CPF item with a length > 0
     will be parsed using the instance of the parser appropriate to its type: { 0x00b2: <class>, }
@@ -1412,7 +1418,7 @@ class CPF( cpppo.dfa ):
         0x00b1:		Connected Transport packet (eg. used within CIP command SendUnitData)
         0x0100:		ListServices response
         0x000C:		ListIdentity response
-    
+
     Presently we only handle NULL Address and Unconnected Messages, and ListServices
     (communications_service), and ListIdentity (identity_object).
 
@@ -1438,7 +1444,7 @@ class CPF( cpppo.dfa ):
         """
         name 			= name or kwds.setdefault( 'context', self.__class__.__name__ )
 
-        # A number, and then each CPF item consistes of a type, length and then parsable data.  
+        # A number, and then each CPF item consistes of a type, length and then parsable data.
         ityp			= UINT( 			context='type_id' )
         ityp[True]	= ilen	= UINT( 			context='length' )
         ilen[None]		= cpppo.decide( 'empty',
@@ -1474,7 +1480,7 @@ class CPF( cpppo.dfa ):
         loop[None]		= cpppo.decide(	'empty',
                         state=cpppo.state( 'done', terminal=True ),
                         predicate=lambda path=None, data=None, **kwds: data[path+'.count'] == 0 )
-        loop[None]		= cpppo.dfa( 	'all', 	
+        loop[None]		= cpppo.dfa( 	'all',
                                                 initial=item,	repeat='.count',
                                                 terminal=True )
 
@@ -1511,7 +1517,7 @@ class send_data( cpppo.dfa ):
     """Handle Connected (SendUnitData) or Unconnected (SendRRData) Send Data request/reply."""
     def __init__( self, name=None, **kwds ):
         name 			= name or kwds.setdefault( 'context', self.__class__.__name__ )
-        
+
         ifce			= UDINT(			context='interface' )
         ifce[True]	= timo	= UINT(				context='timeout' )
         timo[True]		= CPF( terminal=True )
@@ -1531,7 +1537,7 @@ class register( cpppo.dfa ):
     """Handle RegisterSession request/reply (identical)"""
     def __init__( self, name=None, **kwds ):
         name 			= name or kwds.setdefault( 'context', self.__class__.__name__ )
-        
+
         prto			= UINT(				context='protocol_version' )
         prto[True]		= UINT(				context='options',
                                                                 terminal=True )
@@ -1684,7 +1690,7 @@ class CIP( cpppo.dfa ):
 
         This will recognize/match either:
         1) if .command == a recognized command COMMAND_PARSERS key
-        2) if 'CIP.<something>' (where <somethign> is the )matches the 
+        2) if 'CIP.<something>' (where <somethign> is the )matches the
 
         """
         for cmd,cmdcls in cls.COMMAND_PARSERS.items():
@@ -1714,6 +1720,7 @@ class typed_data( cpppo.dfa ):
     INT		yes		= 0x00c3	# 2 bytes
     DINT	yes		= 0x00c4	# 4 bytes
     REAL	yes		= 0x00ca	# 4 bytes
+    LREAL   yes		= 0x00cb	# 8 bytes  (!!! python side - float)
     USINT	yes		= 0x00c6	# 1 byte
     UINT	yes		= 0x00c7	# 2 bytes
     WORD			= 0x00d2	# 2 byte (16-bit boolean array)
@@ -1733,6 +1740,7 @@ class typed_data( cpppo.dfa ):
         DINT.tag_type:		DINT,
         UDINT.tag_type:		UDINT,
         REAL.tag_type:		REAL,
+        LREAL.tag_type:		LREAL,
         SSTRING.tag_type:	SSTRING,
         STRING.tag_type:	STRING,
     }
@@ -1742,18 +1750,18 @@ class typed_data( cpppo.dfa ):
         assert tag_type, "Must specify a numeric (or relative path to) the CIP data type; found: %r" % tag_type
 
         slct			= octets_noop(	'sel_type' )
-        
+
         i_8d			= octets_noop(	'end_8bit',
                                                 terminal=True )
         i_8d[True]	= i_8p	= SINT()
-        i_8p[None]		= move_if( 	'mov_8bit',	source='.SINT', 
+        i_8p[None]		= move_if( 	'mov_8bit',	source='.SINT',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=i_8d )
 
         u_8d			= octets_noop(	'end_8bitu',
                                                 terminal=True )
         u_8d[True]	= u_8p	= USINT()
-        u_8p[None]		= move_if( 	'mov_8bitu',	source='.USINT', 
+        u_8p[None]		= move_if( 	'mov_8bitu',	source='.USINT',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=u_8d )
 
@@ -1767,37 +1775,44 @@ class typed_data( cpppo.dfa ):
         i16d			= octets_noop(	'end16bit',
                                                 terminal=True )
         i16d[True]	= i16p	= INT()
-        i16p[None]		= move_if( 	'mov16bit',	source='.INT', 
+        i16p[None]		= move_if( 	'mov16bit',	source='.INT',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=i16d )
 
         u16d			= octets_noop(	'end16bitu',
                                                 terminal=True )
         u16d[True]	= u16p	= UINT()
-        u16p[None]		= move_if( 	'mov16bitu',	source='.UINT', 
+        u16p[None]		= move_if( 	'mov16bitu',	source='.UINT',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=u16d )
 
         i32d			= octets_noop(	'end32bit',
                                                 terminal=True )
         i32d[True]	= i32p	= DINT()
-        i32p[None]		= move_if( 	'mov32bit',	source='.DINT', 
+        i32p[None]		= move_if( 	'mov32bit',	source='.DINT',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=i32d )
 
         u32d			= octets_noop(	'end32bitu',
                                                 terminal=True )
         u32d[True]	= u32p	= UDINT()
-        u32p[None]		= move_if( 	'mov32bitu',	source='.UDINT', 
+        u32p[None]		= move_if( 	'mov32bitu',	source='.UDINT',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=u32d )
 
         fltd			= octets_noop(	'endfloat',
                                                 terminal=True )
         fltd[True]	= fltp	= REAL()
-        fltp[None]		= move_if( 	'movfloat',	source='.REAL', 
+        fltp[None]		= move_if( 	'movfloat',	source='.REAL',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=fltd )
+        dbld			= octets_noop(	'enddouble',
+                                                 terminal=True )
+        dbld[True]	= dblp	= LREAL()
+        dblp[None]		= move_if( 	'movdouble',	source='.LREAL',
+                                            destination='.data',	initializer=lambda **kwds: [],
+                                                 state=dbld )
+
         # Since a parsed "[S]STRING": { "string": "abc", "length": 3 } is multiple layers deep, and we
         # want to completely eliminate the target container in preparation for the next loop, we'll
         # need to move it up one layer, and then into the final target.
@@ -1806,7 +1821,7 @@ class typed_data( cpppo.dfa ):
         sstd[True]	= sstp	= SSTRING()
         sstp[None]		= move_if( 	'movsstrings',	source='.SSTRING.string',
                                                 destination='.SSTRING' )
-        sstp[None]		= move_if( 	'movsstring',	source='.SSTRING', 
+        sstp[None]		= move_if( 	'movsstring',	source='.SSTRING',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=sstd )
 
@@ -1815,7 +1830,7 @@ class typed_data( cpppo.dfa ):
         sttd[True]	= sttp	= STRING()
         sttp[None]		= move_if( 	'mov_strings',	source='.STRING.string',
                                                 destination='.STRING' )
-        sttp[None]		= move_if( 	'mov_string',	source='.STRING', 
+        sttp[None]		= move_if( 	'mov_string',	source='.STRING',
                                            destination='.data',	initializer=lambda **kwds: [],
                                                 state=sttd )
 
@@ -1843,13 +1858,16 @@ class typed_data( cpppo.dfa ):
         slct[None]		= cpppo.decide(	'REAL',	state=fltd,
             predicate=lambda path=None, data=None, **kwds: \
                 REAL.tag_type == ( data[path+tag_type] if isinstance( tag_type, cpppo.type_str_base ) else tag_type ))
+        slct[None]		= cpppo.decide(	'LREAL',	state=dbld,
+            predicate=lambda path=None, data=None, **kwds: \
+                LREAL.tag_type == ( data[path+tag_type] if isinstance( tag_type, cpppo.type_str_base ) else tag_type ))
         slct[None]		= cpppo.decide(	'SSTRING', state=sstd,
             predicate=lambda path=None, data=None, **kwds: \
                 SSTRING.tag_type == ( data[path+tag_type] if isinstance( tag_type, cpppo.type_str_base ) else tag_type ))
         slct[None]		= cpppo.decide(	'STRING', state=sttd,
             predicate=lambda path=None, data=None, **kwds: \
                 STRING.tag_type == ( data[path+tag_type] if isinstance( tag_type, cpppo.type_str_base ) else tag_type ))
-        
+
         super( typed_data, self ).__init__( name=name, initial=slct, **kwds )
 
     @classmethod
@@ -1897,11 +1915,11 @@ class status( cpppo.dfa ):
                                                 initial=exts,	repeat='_ext.size',
                                                 terminal=True )
         # Only enter the state_ext.data dfa if status_ext.size is non-zero
-        size[None]		= cpppo.decide(	'_ext.size', 
+        size[None]		= cpppo.decide(	'_ext.size',
                             predicate=lambda path=None, data=None, **kwds: data[path+'_ext.size'],
                                                 state=each )
         # Otherwise, we're done!
-        size[None]		= octets_noop( 'done', 
+        size[None]		= octets_noop( 'done',
                                                terminal=True )
         super( status, self ).__init__( name=name, initial=stat, **kwds )
 

@@ -51,9 +51,9 @@ import traceback
 
 import cpppo
 from .. import network
-#from . import defaults, parser, device, ucmm, logix
 from . import defaults, device, ucmm
 
+#from . import parser as parser
 from . import omron_parser as parser
 
 log				= logging.getLogger( "enip.srv" )
@@ -1123,6 +1123,7 @@ def main( argv=None, attribute_class=device.Attribute, idle_service=None, identi
             "DINT":	( parser.DINT,	0 ),
             "SINT":	( parser.SINT,	0 ),
             "REAL":	( parser.REAL,  0.0 ),
+            "LREAL":	( parser.LREAL,  0.0 ),
             "SSTRING":	( parser.SSTRING, '' ),
             "STRING":	( parser.STRING, '' ),
         }

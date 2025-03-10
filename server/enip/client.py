@@ -58,9 +58,9 @@ from datetime import datetime, timezone
 
 import cpppo
 from .. import network
-#from . import defaults, parser, device
 from . import defaults, device
 
+#from . import parser as parser
 from . import omron_parser as parser
 
 # used to be defined here; retain for backward-compatibility...

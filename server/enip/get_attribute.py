@@ -80,9 +80,9 @@ import traceback
 
 import cpppo
 
-#from . import defaults, parser, device, client
 from . import defaults, device, client
 
+#from . import parser as parser
 from . import omron_parser as parser
 
 log				= logging.getLogger( "enip.get" )
@@ -162,6 +162,7 @@ class proxy( object ):
     """
     CIP_TYPES			= {
         "real":		( parser.REAL,	"REAL" ),		# <name>: (<class>, <data-path> )
+        "lreal":	( parser.REAL,	"LREAL" ),
         "sint":		( parser.SINT,	"SINT" ),
         "usint":	( parser.USINT,	"USINT" ),
         "int":		( parser.INT,	"INT" ),

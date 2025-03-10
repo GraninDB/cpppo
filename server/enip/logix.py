@@ -43,7 +43,7 @@ from .device import ( Object, Attribute,
                       Message_Router, Connection_Manager, Identity, TCPIP, Logical_Segments,
                       resolve_element, resolve_tag, resolve, redirect_tag, lookup )
 from . import ucmm
-from .parser import ( BOOL, UDINT, DINT, UINT, INT, USINT, SINT, REAL, EPATH, typed_data,
+from .parser import ( BOOL, UDINT, DINT, UINT, INT, USINT, SINT, REAL, LREAL, EPATH, typed_data,
                       move_if, octets_drop, octets_noop, enip_format, status )
 
 log				= logging.getLogger( "enip.lgx" )
@@ -322,6 +322,11 @@ class Logix( Message_Router ):
                                           INT.tag_type,  UINT.tag_type,
                                          DINT.tag_type, UDINT.tag_type,
                                          REAL.tag_type),
+                    LREAL.tag_type:	(BOOL.tag_type,
+                                         SINT.tag_type, USINT.tag_type,
+                                          INT.tag_type,  UINT.tag_type,
+                                         DINT.tag_type, UDINT.tag_type,
+                                         REAL.tag_type, LREAL.tag_type),
                     DINT.tag_type:	(BOOL.tag_type,
                                          SINT.tag_type, USINT.tag_type,
                                           INT.tag_type,  UINT.tag_type,
