@@ -5,7 +5,7 @@ description = "Communications Protocol Python Parser and Originator -- EtherNet/
 authors = [
     {name = "Author"}
 ]
-readme = "README.md"
+readme = "README.org"
 requires-python = ">=3.8"
 dependencies = [
     "greenery (>=2.0,<3.0)"
