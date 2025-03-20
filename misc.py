@@ -20,17 +20,20 @@ try:
 except ImportError:
     pass
 
+import contextlib
+import ast
 import functools
 import logging
 import math
 import sys
 import time
 import types
+import re
 
 # Import ip_address/network and urlparse into the cpppo namespace.  ip_address requires unicode, so
 # we also provide a Python2 shim to ensure a str is interpreted as unicode, as well as provide
 # cpppo.ip/network functions that handle str sensibly.
-from ipaddress import ( ip_address, ip_network )
+from ipaddress import ( ip_address, ip_network, IPv4Address, IPv6Address )
 try:
     from urllib.parse import urlparse
 except ImportError:
@@ -41,6 +44,71 @@ try:
 except ImportError:
     import repr as reprlib
 
+try:
+    xrange(0,1)
+except NameError:
+    xrange 			= range
+
+try:
+    unicode			= unicode
+except NameError:
+    unicode			= str
+
+
+# 
+# Arrange to redirect sys.stdout via the provided raw socket.  Python2/3 have radically differing
+# <socket>.makefile capabilities.  For the outgoing socket, we can specify encoding in Python3;
+# Python2 assumes raw/ASCII.
+# 
+# The incoming side of the socket; Set non-blocking, to return whatever is available at the moment
+# socket is read.  We must still detect readability, or non-blocking read will return None, breaking
+# the stream's decoding.  Actually, we the Python io/codecs infrastructure cannot handle
+# non-blocking IO at all: https://bugs.python.org/issue13322.  The codecs.py could be fixed with a
+# quite simple change to allow input data of either None or b'' to be handled equivalently in
+# BufferedIncrementalDecoder:
+# 
+#     def decode(self, input, final=False):
+#         # decode input (taking the buffer into account, and None for non-blocking input)
+#         data = self.buffer + ( input or b'' )
+#         ...
+# 
+# However, these ideas have been rejected since ~2011, so are unlikely to be fixed.  Therefore, we
+# can transmit UTF-8 encoded data via the "write" half of the socket, but must receive raw binary
+# data via the non-blocking "read" half of the socket, and accumulate/decode it ourselves.
+# 
+try:
+    from contextlib import redirect_stdout
+
+    def make_socket_stream( sock, mode, buffering=None, encoding=None ):
+        if 'b' in mode:
+            return sock.makefile( mode, buffering=buffering )
+        else:
+            return sock.makefile( mode, buffering=buffering, encoding=encoding )
+except ImportError:
+    # Python2 assumes raw/ASCII encoding, manual sys.stdout control
+    class redirect_stdout( object ):
+        def __init__( self, stream ):
+            self.stream		= stream
+        def __enter__( self ):
+            sys.stdout.flush()
+            self.save		= sys.stdout
+            sys.stdout		= self.stream
+        def __exit__( self, *_exc_info ):
+            sys.stdout.flush()
+            sys.stdout		= self.save
+
+    def make_socket_stream( sock, mode, buffering=None, encoding=None ):
+        return sock.makefile( mode, -1 if buffering is None else buffering )
+
+def redirect_stdout_socket( target, buffering=None ):
+    @functools.wraps( target )
+    def wrapper( write_socket, *args, **kwds ):
+        stdout		= make_socket_stream( write_socket, "w", buffering=buffering, encoding='utf-8' )
+        with redirect_stdout( stdout ):
+            return target( *args, **kwds )
+    return wrapper
+
+
 __author__                      = "Perry Kundert"
 __email__                       = "perry@hardconsulting.com"
 __copyright__                   = "Copyright (c) 2013 Hard Consulting Corporation"
@@ -49,6 +117,23 @@ __license__                     = "Dual License: GPLv3 (or later) and Commercial
 """
 Miscellaneous functionality used by various other modules.
 """
+
+# 
+# Python2/3 Compatibility Types
+# 
+
+# Types produced by iterators over various input stream types
+type_bytes_iter			= str if sys.version_info[0] < 3 else int
+type_str_iter			= str
+
+# The base class of string types
+type_str_base			= basestring if sys.version_info[0] < 3 else str # noqa: F821
+
+# The array.array typecode for iterated items of various input stream types
+type_unicode_array_symbol	= 'u'
+type_str_array_symbol		= 'c' if sys.version_info[0] < 3 else 'u'
+type_bytes_array_symbol		= 'c' if sys.version_info[0] < 3 else 'B'
+
 
 # 
 # misc.mutexmethod -- apply a synchronization mutex around a method invocation
@@ -145,14 +230,18 @@ def change_function( function, **kwds ):
 
 
     """
-    # Enumerate  all the __code__ attributes in the same order; types.CodeTypes
-    # doesn't accept keyword args, only position.
-    attrs			= [ "co_argcount" ]
-    if sys.version_info[0] >= 3:
-        attrs		       += [ "co_kwonlyargcount" ]
-        if sys.version_info[1] >= 8:
-            attrs	       += [ "co_posonlyargcount" ]
-    attrs		       += [ "co_nlocals",
+    if hasattr( function.__code__, 'replace' ):
+        function.__code__	= function.__code__.replace( **kwds )
+        return
+
+    # Enumerate all the __code__ attributes in the same order; types.CodeTypes doesn't accept
+    # keyword args, only positional.  This must be updated if new releases of Python have additional
+    # parameters, but should be backward-compatible (the positional ordering should be consistent
+    # for any parameters in use by a version)
+    attrs			= [ "co_argcount",
+                                    "co_posonlyargcount",
+                                    "co_kwonlyargcount",
+                                    "co_nlocals",
                                     "co_stacksize",
                                     "co_flags",
                                     "co_code",
@@ -161,16 +250,24 @@ def change_function( function, **kwds ):
                                     "co_varnames",
                                     "co_filename",
                                     "co_name",
+                                    "co_qualname",
                                     "co_firstlineno",
                                     "co_lnotab",
+                                    "co_exceptiontable",
                                     "co_freevars",
-                                    "co_cellvars" ]
+                                    "co_cellvars", ]
 
-    assert all( k in attrs for k in kwds ), \
-        "Invalid function keyword(s) supplied: %s" % ( ", ".join( kwds.keys() ))
+    assert all( k in attrs and hasattr( function.__code__, k ) for k in kwds ), \
+        "Invalid function keyword(s) supplied: %s" % ( ", ".join( kwds ))
 
-    # Alter the desired function attributes, and update the function's __code__
-    modi_args			= [ kwds.get( a, getattr( function.__code__, a )) for a in attrs ]
+    # Alter the desired function attributes w/ any supplied keywaords, and update the function's
+    # __code__.  Deduces what positional args are required by which attrs exist in this function's
+    # code object
+    modi_args			= [
+        kwds.get( a, getattr( function.__code__, a ))
+        for a in attrs
+        if hasattr( function.__code__, a )
+    ]
     modi_code			= types.CodeType( *modi_args )
     modi_func			= types.FunctionType( modi_code, function.__globals__ )
     function.__code__		= modi_func.__code__
@@ -182,7 +279,7 @@ def change_function( function, **kwds ):
 # 
 #     Augment logging with some new levels, between INFO and WARNING, used for normal/detail output.
 # 
-#     Unfortunationly, logging uses a fragile method to find the logging function's name in the call
+#     Unfortunately, logging uses a fragile method to find the logging function's name in the call
 # stack; it looks for the first function whose co_filename is *not* the logger source file.  So, we
 # need to change our functions to appear as if they originated from logging._srcfile.
 # 
@@ -194,7 +291,7 @@ logging.DETAIL			= logging.INFO+3
 #      .INFO    	       == 20
 #      .DEBUG    	       == 10
 logging.TRACE			= logging.NOTSET+5
-#      .NOTSETG    	       == 0
+#      .NOTSET    	       == 0
 
 logging.addLevelName( logging.NORMAL,	'NORMAL' )
 logging.addLevelName( logging.DETAIL,	'DETAIL' )
@@ -447,10 +544,8 @@ def natural( string, fmt="%9s", ):
                    else itm )
                   for itm in res )
 
-natural.str_type 	= ( basestring if sys.version_info[0] < 3
-                            else str )
-natural.num_types	= ( (float, int, long) if sys.version_info[0] < 3
-                            else (float, int))
+natural.str_type 	= basestring if sys.version_info[0] < 3 else str # noqa: F821
+natural.num_types	= (float, int, long) if sys.version_info[0] < 3 else (float, int) # noqa: F821
 
 
 def non_value( number ):
@@ -524,7 +619,8 @@ def assert_tps( minimum=None, scale=None, repeat=1 ):
         return wrapper
     return decorator
 
-def hexdump( src, length=16, sep='.' ):
+
+def hexdumper( src, offset=0, length=16, sep='.', quote='|' ):
     '''
     @brief Return {src} in hex dump.
     @param[in] length   {Int} Nb Bytes by row.
@@ -533,18 +629,9 @@ def hexdump( src, length=16, sep='.' ):
 
     @note Full support for python2 and python3 !
     '''
-    result = []
-
-    # Python3 support
-    try:
-        xrange(0,1);
-    except NameError:
-        xrange = range;
-
     for i in xrange(0, len(src), length):
         subSrc = src[i:i+length];
         hexa = '';
-        isMiddle = False;
         for h in xrange(0,len(subSrc)):
             if h == length/2:
                 hexa += ' ';
@@ -564,20 +651,112 @@ def hexdump( src, length=16, sep='.' ):
                 text += chr(c);
             else:
                 text += sep;
-        result.append(('%08X:  %-'+str(length*(2+1)+1)+'s  |%s|') % (i, hexa, text));
+        yield "{addr:08X}:  {hexa:<{hexawidth}s}  {quote}{text}{quote}".format(
+            addr=i+offset, hexa=hexa, hexawidth=length*(2+1)+1, text=text, quote=quote or '' )
 
-    return '\n'.join(result);
+
+def hexdump( src, offset=0, length=16, sep='.', quote='|' ):
+    return '\n'.join( hexdumper( src, offset=offset, length=length, sep=sep, quote=quote ))
+
+
+def hexdump_differs( *dumps, **kwds ): # Python3 version: ', inclusive=False ):'
+    """Compare a number of hexdump outputs side by side, returning differing lines."""
+    inclusive			= kwds.get( 'inclusive', False ) # for Python2 compatibility
+    lines			= [ d.split( '\n' ) for d in dumps ]
+    differs			= []
+    for cols in zip( *lines ):
+        same			= all( c == cols[0] for c in cols[1:] )
+        if not same or inclusive:
+            differs.append(( ' == ' if same else ' != ' ).join( cols ))
+    return '\n'.join( differs )
+
+
+def hexdecode( enc, offset=0, sep=':' ):
+    """Decode hex octets "ab:cd:ef:01..." (starting at off bytes in) into b"\xab\xcd\xef\x01..." """
+    return bytes(bytearray.fromhex( ''.join( enc.split( sep ))))[offset:]
+
+
+def hexloader( dump, offset=0, fill=False, skip=False ):
+    """Load data from a iterable hex dump, eg, either as a sequence of rows or a string:
+
+        00003FD0:  3F D0 00 00 00 00 00 00  00 00 00 00 12 00 00 00   |................|
+
+        00003FF0:  3F F0 00 00 00 00 00 00  00 00 00 00 12 00 00 00   |................|
+        00004000:  40 00 30 31 20 53 45 34  20 45 20 32 33 2e 35 63   |@.01 SE4 E 23.5c|
+
+    Yields a corresponding sequence of address,bytes.  To ignore the address
+    and get the data:
+
+        b''.join( data for addr,data in hexload( ... )
+
+    If fill may be False/b'', or a single-byte value used to in-fill any missing
+    address ranges.
+
+    If skip is Truthy, we allow and skip empty/non-matching lines.
+    If gaps is Truthy, allow gaps in addresses.
+    """
+    if fill:
+        assert isinstance( fill, bytes ) and len( fill ) == 1, \
+            "fill must be a bytes singleton, not {fill!r}".format( fill=fill )
+    if isinstance( dump, basestring if sys.version_info[0] < 3 else str ): # noqa: F821
+        dump			= dump.split( '\n' )
+    for row in dump:
+        if not row.strip():
+            continue # all whitespace; ignore
+        match			= hexloader.parser.match( row )
+        if not match:
+            assert skip, \
+                "Failed to match a hex dump on row: {row!r}".format( row=row )
+            continue
+        addr			= int( match.group( 'address' ), 16 )
+        data			= hexdecode( match.group( 'values' ), sep=' ' )
+
+        if addr > offset:
+            # row address is beyond current offset; fill, or skip offset ahead
+            if fill:
+                yield offset,(fill * ( addr - offset ))
+            offset		= addr
+        if addr < offset:
+            # Row starts before desired offset; skip or clip
+            if addr + len( data ) <= offset:
+                continue
+            data		= data[offset-addr:]
+            addr		= offset
+        yield addr,data
+        offset			= addr + len( data )
+
+hexloader.parser		= re.compile(
+    r"""^
+            \s*
+        (?P<address>
+          {hexclass}{{1,16}}			# address
+        )
+	    [:]\s*				#     : whitespace
+        (?P<values>
+          (?:\s{{0,2}}{hexclass}{{2}})+		# hex pairs separated by 0-2 whitespace
+        )
+	(?:
+            \s+					#     whitespace at end
+          (?P<quote>\|?)			#   | (optional ..print.. quote)
+          (?P<print>
+            .*					# |..print..|
+          )
+          (?P=quote)				#   | (optional ..print.. quote)
+        )?					# entire ..print.. section optional
+        $""".format( hexclass='[0-9A-Fa-f]' ), re.VERBOSE )
+
+
+def hexload( dump, offset=0, fill=False, skip=False ):
+    """Return bytes data specified from dump"""
+    return b''.join( d for a,d in hexloader( dump, offset=offset, fill=fill, skip=skip ))
+
 
 # 
-# unicode, ip/network, parse_ip_port -- handle unicode/str IP addresses
+# ip/network, parse_ip_port -- handle unicode/str IP addresses
 # 
 #     Converts str (assumed unicode) to IP address (ipaddress.ip_address).  Provides a Python-2
 # compatible unicode shim to re-interpret a str as unicode in a Python version-agnosic fashion.
 # 
-if sys.version_info[0] >= 3:
-    def unicode( s ):
-        return str( s )
-
 def ip( a ):
     return ip_address( unicode( a ))
 
@@ -585,28 +764,61 @@ def network( a ):
     return ip_network( unicode( a ))
 
 def parse_ip_port( netloc, default=(None,None) ):
-    """Parse an <interface>[:<port>] with the supplied defaults, returning <host>,<port>.  A Truthy host
-    portion is required (ie. non-empty); port is optional.  Returns ip as an ip_address (if
-    possible), otherwise as a str; either form can be converted to str, if desired.
+    """Parse an <interface>[:<port>] with the supplied defaults, returning <host>,<port|None>.
+
+    A Truthy host portion is required (ie. non-empty); port is optional.  Returns ip as an
+    ip_address (if possible), otherwise as a str; either form can be converted to str, if desired.
 
     """
     try:
-        # Raw IPv{4,6} address, eg 1.2.3.4, ::1
-        addr			= ip( netloc )
-        port			= None
-    except ValueError:
-        # IPv{4,6} address:port, eg 1.2.3.4:80, [::1]:80 (raw IP only returned as an ip_address)
+        # A literal "('hostname', port)" tuple or an actual tuple pair
+        if isinstance( netloc, type_str_base ):
+            addr,port	= ast.literal_eval( netloc )
+        else:
+            addr,port	= netloc
+        assert isinstance( addr, type_str_base ) and isinstance( port, (int, type(None)) )
         try:
-            parsed		= urlparse( '//{}'.format( netloc ))
-            addr		= ip( parsed.hostname )
-            port		= parsed.port
+            addr	= ip( addr.hostname )
         except:
-            # <hostname>[:<port>] (anything other than a rew IP will be returned as a str)
-            addr_port		= netloc.split( ':' )
-            assert 1 <= len( addr_port ) <= 2, \
-                "Expected <host>[:<port>], found {netloc!r}"
-            addr		= addr_port[0]
-            port		= None if len( addr_port ) < 2 else addr_port[1]
+            pass
+        logging.info( "{addr!r}:{port!r} from {netloc!r}: found a Python actual or literal tuple".format(
+            addr=addr, port=port, netloc=netloc ))
+    except Exception:
+        try:
+            # Raw IPv{4,6} address, eg "1.2.3.4", "::1"
+            addr		= ip( netloc )
+            port		= None
+            logging.info( "{addr!r}:{port!r} from {netloc!r}: found a bare IP address".format(
+                addr=addr, port=port, netloc=netloc ))
+        except ValueError:
+            # IPv{4,6} address:port, eg "1.2.3.4:80", "[::1]:80" (raw IP only returned as an
+            # ip_address).  Retains case, if no port supplied (eg. for entities that are not hosts,
+            # such as "ttyS1".)
+            try:
+                parsed		= urlparse( '//{}'.format( netloc ))
+                port		= parsed.port  # will be None or int
+                addr		= parsed.netloc if port is None else parsed.hostname
+                try:
+                    addr	= ip( parsed.hostname )
+                except:
+                    pass
+                logging.info( "{addr!r}:{port!r} from {netloc!r}: found a URL".format(
+                    addr=addr, port=port, netloc=netloc ))
+            except:
+                # "<hostname>[:<port>]" or even the degenerate and non-deterministic "::1:12345" --
+                # use deterministic [<IPv6>]:<port> instead!  Anything other than a rew IP will be
+                # returned as a str.
+                addr_port	= netloc.rsplit( ':', 1 )
+                assert 1 <= len( addr_port ) <= 2 and not addr_port[0].endswith( ':' ), \
+                    "Expected <host>[:<port>], found {netloc!r}".format( netloc=netloc )
+                addr		= addr_port[0]
+                try:
+                    addr	= ip( addr )
+                except:
+                    pass
+                port		= None if len( addr_port ) < 2 else addr_port[1]
+                logging.info( "{addr!r}:{port!r} from {netloc!r}: found a colon-separated string".format(
+                    addr=addr, port=port, netloc=netloc ))
 
     # An empty ip is overridden by a non-None default[0], but either could still be '', which is a
     # valid i'face designation.
@@ -621,5 +833,10 @@ def parse_ip_port( netloc, default=(None,None) ):
         port			= default[1]
     if port is not None:
         port			= int( port )
+
+    assert isinstance( addr, (type_str_base, IPv4Address, IPv6Address) ), \
+        "address must be an IP or a hostname str, not {!r}".format( addr )
+    assert isinstance( port, (int, type(None)) ), \
+        "port must be a number, or None, not {!r}".format( port )
 
     return addr, port # (None/str/ip_address, None/int)

@@ -27,6 +27,7 @@ if __name__ == "__main__":
 from ...dotdict import dotdict, apidict
 from ... import misc, tools
 from .. import enip, network
+from ..enip.main import main as enip_main
 
 log				= logging.getLogger( "cli.test" )
 
@@ -149,7 +150,7 @@ def test_client_api_simple():
             }),
         },
     })
-    server_func			= enip.main
+    server_func			= enip_main
 
     Process			= threading.Thread # multiprocessing.Process
     server			= Process( target=server_func, kwargs=server_kwds )
@@ -239,21 +240,6 @@ def test_client_api_random():
     """
     taglen			= 100 # able to fit request for Attribute into 1 packet
 
-    svraddr		        = ('localhost', 12399)
-    svrkwds			= dotdict({
-        'argv': [
-            #'-v',
-            '--address',	'%s:%d' % svraddr,
-            'Int@0x99/1/1=INT[%d]' % ( taglen ),
-            'Real@0x99/1/2=REAL[%d]' % ( taglen ),
-            'DInt@0x99/1/3=DINT[%d]' % ( taglen ),
-        ],
-        'server': {
-            'control':	apidict( enip.timeout, { 
-                'done': False
-            }),
-        },
-    })
     clitimes			= 100
     clitimeout			= 15.0
     clidepth			= 5		# max. requests in-flight
@@ -287,7 +273,7 @@ def test_client_api_random():
 
             yield (elm+( off or 0 ),cnt-( off or 0 )),tag
 
-    def clitest_tag( n ):
+    def clitest_tag( n, address ):
         times			= clitimes  # How many I/O per client
         # take apart the sequence of ( ..., ((elm,cnt), "Int[1-2]=1,2"), ...)
         # into two sequences: (..., (elm,cnt), ...) and (..., "Int[1-2]=1,2", ...)
@@ -297,7 +283,7 @@ def test_client_api_random():
         connection		= None
         while not connection:
             try:
-                connection	= enip.client.connector( *svraddr, timeout=clitimeout )
+                connection	= enip.client.connector( *address, timeout=clitimeout )
             except socket.error as exc:
                 if exc.errno != errno.ECONNREFUSED:
                     raise
@@ -342,13 +328,13 @@ def test_client_api_random():
 
         return 1 if failures else 0
 
-    def clitest_svc( n ):
+    def clitest_svc( n, address ):
         """Issue a series of CIP Service Codes."""
         times			= clitimes  #  How many I/O per client
         connection		= None
         while not connection:
             try:
-                connection	= enip.client.connector( *svraddr, timeout=clitimeout )
+                connection	= enip.client.connector( *address, timeout=clitimeout )
             except socket.error as exc:
                 if exc.errno != errno.ECONNREFUSED:
                     raise
@@ -390,16 +376,35 @@ def test_client_api_random():
         return 1 if failures else 0
 
     # Use a random one of the available testing functions
-    def clitest( n ):
+    def clitest( n, address ):
         random.choice( [
             clitest_tag,
             clitest_svc,
-        ] )( n )
+        ] )( n, address )
 
-    
-    failed			= network.bench( server_func	= enip.main,
-                                                 server_kwds	= svrkwds,
-                                                 client_func	= clitest,
-                                                 client_count	= clicount,
-                                                 client_max	= clipool )
+    with multiprocessing.Manager() as m:
+        svrkwds			= dict(
+            argv	= [
+                '-a', 'localhost:0', '-A',
+                '-v',
+                'Int@0x99/1/1=INT[%d]' % ( taglen ),
+                'Real@0x99/1/2=REAL[%d]' % ( taglen ),
+                'DInt@0x99/1/3=DINT[%d]' % ( taglen ),
+            ],
+            server	= dotdict(
+                control		= m.apidict(
+                    enip.timeout,
+                    done	= False
+                ),
+            ),
+        )
+
+        failed			= network.bench(
+            server_func	= enip_main,
+            server_kwds	= svrkwds,
+            client_func	= clitest,
+            client_count= clicount,
+            client_max	= clipool,
+            address_delay= 5.0,
+        )
     assert failed == 0

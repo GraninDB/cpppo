@@ -31,6 +31,7 @@ enip.logix	-- Implements a Logix-like PLC subset
 
 """
 
+import contextlib
 import json
 import logging
 import sys
@@ -38,12 +39,14 @@ import threading
 import traceback
 
 from ...dotdict import dotdict
-from ... import automata, misc
+from ...automata import ( decide, rememberable )
+from ... import misc
 from .device import ( Object, Attribute,
                       Message_Router, Connection_Manager, Identity, TCPIP, Logical_Segments,
                       resolve_element, resolve_tag, resolve, redirect_tag, lookup )
 from . import ucmm
-from .parser import ( BOOL, UDINT, DINT, LINT, UINT, INT, USINT, SINT, REAL, LREAL, EPATH, typed_data,
+from .parser import ( BOOL, ULINT, LINT, UDINT, DINT, UINT, INT, USINT, SINT, STRUCT, STRING,
+                      LREAL, REAL, EPATH, typed_data, octets_encode,
                       move_if, octets_drop, octets_noop, enip_format, status )
 
 log				= logging.getLogger( "enip.lgx" )
@@ -134,10 +137,12 @@ class Logix( Message_Router ):
 
     """
 
-    # TODO: MAX_BYTES is arbitrary.  We're supposed to be able to return data sufficient to fill the
+    # MAX_BYTES is arbitrary.  We're supposed to be able to return data sufficient to fill the
     # remaining reply package size, but how can we do that?  We'd have to be informed of the
-    # remaining packet size available, as an argument to the produce method...
-    MAX_BYTES			= 500
+    # remaining packet size available, as an argument to the produce method...  The user may alter
+    # this limit (eg. according to the capacity of Forward Open channel).  However, it is still
+    # quite fragile, especially when producing Multiple Service Packet requests/responses.
+    MAX_BYTES			= 488 # Wild guess; leave room for ENIP headers, etc. in reply
 
     RD_TAG_NAM			= "Read Tag"
     RD_TAG_CTX			= "read_tag"
@@ -190,8 +195,7 @@ class Logix( Message_Router ):
         off			= 0
         if data.service in (self.RD_FRG_RPY, self.WR_FRG_RPY):
             off			= data[context].get( 'offset' ) or 0 # nonexistent/None/0 --> 0
-        assert siz and off % siz == 0, \
-            "Requested byte offset %d is not on a %d-byte data element boundary" % ( off, siz )
+        max_size		= data[context].get( 'max_size' ) or self.MAX_BYTES
 
         # Compute the extents of the full reply, given no byte offset, unlimited reply size and
         # complete data.  If no 'elements' has been provided (only possible when hand-forming a
@@ -201,29 +205,50 @@ class Logix( Message_Router ):
         cnt			= len( attribute )
         elm			= data[context].get( 'elements', cnt - beg ) # Read/Write Tag defaults to all
         endactual		= beg + elm
-        assert 0 < endactual <= cnt, \
-            "Attribute %s ending element invalid: %r" % ( attribute, (beg, endactual) )
 
         # Maximum elements for read is the capacity of the reply message, for write is the number
         # actually provided in request.  Compute this from the beginning element deduced from the
         # byte offset of this request.  This will reduce the scope of the reply by A) advancing
-        # 'beg' by a byte offset, and/or B) reducing 'end' due to reply size limitations or
-        # an incomplete number of data elements provided.  The 'end' can only get smaller
-        # than the (known valid) 'endactual'.
-        beg		       += off // siz
+        # 'beg' by a byte offset, and/or B) reducing 'end' due to reply size limitations or an
+        # incomplete number of data elements provided.  The 'end' can only get smaller than the
+        # (known valid) 'endactual'.
+        #
+        # This is not strictly correct; we must be able to return a response w/ an offset that
+        # starts/ends arbitrarily mid-element!  Also, for STRUCT types, the size of each UDT element
+        # (eg. 600 bytes) can be greater than the maximum connection size, preventing even one
+        # complete element from being returned.  For this function, always round outwards to return
+        # complete element(s); this will prevent some clients from accepting the data (eg. if the
+        # elements are too big, and a Small Forward Open is used; it is assumed that the response
+        # data will be trimmed elsewhere, according to the actual byte offset requested in the Read
+        # Tag Fragmented request.
+        begadvance		= off // siz # Rounds down to the start of the element at offset
+        offremains		= off - begadvance * siz # off is how many bytes into beg element?
+        log.info( "index: {index!r} beg: {beg}, cnt: {cnt}, elm: {elm}; endactual: {endactual}, begadvance: {begadvance}".format(
+            index=index, beg=beg, cnt=cnt, elm=elm, endactual=endactual, begadvance=begadvance ))
+        beg		       += begadvance
         if data.service in (self.RD_TAG_RPY, self.RD_FRG_RPY):
-            endmax 		= beg + self.MAX_BYTES // siz
+            # Return at least enough elements to satisfy max_size, beginning at offset 'off'.  We
+            # have a 'beg' Element that contains the first byte at offset 'off'; compute the endmax
+            # that contains the last byte at offset off+max_siz-1.  The data may specify the
+            # (remaining) .max_size payload available.
+            endadv		= max(( offremains + max_size + siz - 1 ) // siz, 1 ) # rounds up
+            endmax 		= beg + endadv
         else:
-            endmax		= beg + len( data[context].data )
+            endadv		= len( data[context].data )
+            endmax		= beg + endadv
             assert endmax <= endactual, \
                 "Attribute %s capacity exceeded; writing %d elements beginning at index %d" % (
                     attribute, len( data[context].data ), beg )
         end			= min( endactual, endmax )
+        log.info( "offset: {off:6d} siz: {siz:3d}, beg: {beg:3d}, endadv: {endadv:3d}, end: {end:3d}, endmax: {endmax:3d}, offremains: {offremains}".format(
+            off=off, siz=siz, beg=beg, end=end, endadv=endadv, endmax=endmax, offremains=offremains ))
         assert 0 <= beg < cnt, \
-            "Attribute %s initial element invalid: %r" % ( attribute, (beg, end) )
+            "Attribute %r initial element invalid: %r" % ( attribute, (beg, end) )
+        assert elm <= cnt, \
+            "Attribute %r elements requested invalid: %r" % ( attribute, elm )
         assert beg < end, \
-            "Attribute %s ending element before beginning: %r" % ( attribute, (beg, end) )
-        return (beg,end,endactual)
+            "Attribute %r ending element before beginning: %r" % ( attribute, (beg, end) )
+        return (beg,end,endactual,offremains,max_size)
 
     def request( self, data, addr=None ):
         """Any exception should result in a reply being generated with a non-zero status."""
@@ -269,6 +294,19 @@ class Logix( Message_Router ):
         # this point; any exceptions generated will be captured, logged and an appropriate reply
         # .status error code returned.
 
+        # These status codes, and their exact Extended Error codes are especially important to get
+        # right, especially for Read Tag Fragmented 0x52.  The response payload, when carried by an
+        # CIP Unconnected Send (0x52) is otherwise redundant!  The only single-byte error code below
+        # 0x10 that doesn't carry an extended status is 0x06: Not enough room for all the data.
+        # However, this is only returned on a partially successful response with a large payload of
+        # data.
+
+        # Therefore, a hard rule to distinguish between a failed Unconnected Send (0x52) response
+        # (0xD2) status, and a Read Tag Fragmented (0x52) response (0xD2) status, is this: If the
+        # response size is exactly 4 (service code, pad, status, 0 extended status) , *and* the
+        # status code is < 0x10, then the response is a failed Unconnected Send (ie. bad path).
+        # Otherwise, it is an encapsulated status code from an erroneous payload request 0x52.
+
         # For Reads:
         # Error Code	Extended Error	Description of Error
         # 0x04		0x0000 		A syntax error was detected decoding the Request Path.
@@ -294,7 +332,7 @@ class Logix( Message_Router ):
             # We need to find the attribute for all requests, and it better be ours!
             data.status		= 0x05 # On Failure: Request Path destination unknown
             data.status_ext	= {'size': 1, 'data':[0x0000]}
-            clid, inid, atid	= resolve( data.path, attribute=True )
+            clid, inid, atid	= resolve( data.path, attribute=1 ) # eg. @<cls>/<ins>[<elm>] defaults to Attribute 1!
             attribute		= lookup( clid, inid, atid )
             assert clid == self.class_id and inid == self.instance_id, \
                 "Path %r processed by wrong Object %r" % ( data.path['segment'], self )
@@ -305,9 +343,12 @@ class Logix( Message_Router ):
                     attribute.parser.__class__.__name__, self.service[data.service] )
 
             if data.service in (self.RD_TAG_RPY, self.RD_FRG_RPY):
-                # Read Tag [Fragmented] Reply.  Fill in .data and .type
+                # Read Tag [Fragmented] Reply.  Fill in .data and .type/.structure_tag
                 context		= 'read_frag' if data.service == self.RD_FRG_RPY else 'read_tag'
-                data[context].type= attribute.parser.tag_type
+                data[context].type = attribute.parser.tag_type
+                if attribute.parser.tag_type == STRUCT.tag_type:
+                    data[context].structure_tag \
+                                = attribute.parser.structure_tag
             elif data.service in (self.WR_TAG_RPY, self.WR_FRG_RPY):
                 # Write Tag [Fragmented] Reply.  We'll allow data payloads of more restricted signed
                 # types into Attributes of a more spacious signed type (eg. writing SINT values into
@@ -317,30 +358,44 @@ class Logix( Message_Router ):
                 data.status_ext= {'size': 1, 'data':[0x2107]}
                 allowed_tag_types = {
                     BOOL.tag_type:      (BOOL.tag_type,),
-                    REAL.tag_type:	(BOOL.tag_type,
-                                         SINT.tag_type, USINT.tag_type,
-                                          INT.tag_type,  UINT.tag_type,
-                                         DINT.tag_type, UDINT.tag_type,
-                                         REAL.tag_type),
                     LREAL.tag_type:	(BOOL.tag_type,
                                          SINT.tag_type, USINT.tag_type,
                                           INT.tag_type,  UINT.tag_type,
                                          DINT.tag_type, UDINT.tag_type,
                                          REAL.tag_type, LREAL.tag_type),
-                    DINT.tag_type:	(BOOL.tag_type,
+                    REAL.tag_type:	(BOOL.tag_type,
                                          SINT.tag_type, USINT.tag_type,
                                           INT.tag_type,  UINT.tag_type,
-                                         DINT.tag_type, UDINT.tag_type),
+                                         DINT.tag_type, UDINT.tag_type,
+                                         REAL.tag_type),
                     LINT.tag_type:	(BOOL.tag_type,
                                          SINT.tag_type, USINT.tag_type,
                                           INT.tag_type,  UINT.tag_type,
                                          DINT.tag_type, UDINT.tag_type,
-                                         LINT.tag_type),
+                                         LINT.tag_type, ULINT.tag_type),
+                    ULINT.tag_type:	(BOOL.tag_type,
+                                         USINT.tag_type,
+                                         UINT.tag_type,
+                                         UDINT.tag_type,
+                                         ULINT.tag_type),
+                    DINT.tag_type:	(BOOL.tag_type,
+                                         SINT.tag_type, USINT.tag_type,
+                                          INT.tag_type,  UINT.tag_type,
+                                         DINT.tag_type, UDINT.tag_type),
+                    UDINT.tag_type:	(BOOL.tag_type,
+                                         USINT.tag_type,
+                                         UINT.tag_type,
+                                         UDINT.tag_type),
                     INT.tag_type:	(BOOL.tag_type,
                                          SINT.tag_type, USINT.tag_type,
                                          INT.tag_type,   UINT.tag_type),
+                    UINT.tag_type:	(BOOL.tag_type,
+                                         USINT.tag_type,
+                                         UINT.tag_type),
                     SINT.tag_type:	(BOOL.tag_type,
                                          SINT.tag_type, USINT.tag_type),
+                    USINT.tag_type:	(BOOL.tag_type,
+                                         USINT.tag_type),
                 }
                 assert data[context].type in allowed_tag_types.get(
                     attribute.parser.tag_type, (attribute.parser.tag_type,) ), \
@@ -353,16 +408,45 @@ class Logix( Message_Router ):
             data.status_ext	= {'size': 1, 'data': [ 0x2105 ]} # Number of elements beyond end of tag
 
             # Compute (beg,end] for this reply, given data.path...element, data.elements/offset.
-            # The end element of the full request (not the size/data-limited end) is in endactual
-            beg,end,endactual	= self.reply_elements( attribute, data, context )
+            # The end element of the original request (not the size/data-limited end) is in
+            # endactual.  If a .offset (and optionally .max_size) is provided, these must be used to
+            # constrain the actual payload bytes returned; the [beg,end) should index elements
+            # containing the first byte to return (at .offset), up tothe last byte
+            # (.offset+.max_size-1).  Since we might have advances 'beg', we get back the adjusted
+            # 'offremains', as well the target 'max_size'.
+            beg,end,endactual,offremains,max_size \
+                                        = self.reply_elements( attribute, data, context )
             log.debug( "Replying w/ elements [%3d-%-3d/%3d] for %r", beg, end, endactual, data )
             if data.service in (self.RD_TAG_RPY, self.RD_FRG_RPY):
                 # Read Tag [Fragmented]
-                data[context].data	= attribute[beg:end]
-                log.detail( "%s Reading %3d elements %3d-%3d from %s: %s",
-                            self, end - beg, beg, end-1, attribute, data[context].data )
+                recs			= attribute[beg:end]
+                if attribute.parser.tag_type == STRUCT.tag_type:
+                    # Render the STRUCT UDTs to binary.  Assume that each record has its data.input
+                    # representation.
+                    input		= b''
+                    for r in recs:
+                        input	       += octets_encode( r.data.input )
+                    # For STRUCTs *only*, we support arbitrary .offset and max_size; trim it
+                    # here. (For other basic data types, we'll simply return the designated
+                    # elements, which may be less than, or slightly more than the .max_size /
+                    # self.MAX_BYTES by some portion of one element size) Trim it here.  If we've
+                    # returned the end element of the request, and all of its bytes, we're complete.
+                    trimmed		= input[offremains:offremains+max_size]
+                    recs		= dict( input=trimmed )
+                    completed		= end == endactual and offremains+max_size >= len( input )
+                else:
+                    # We don't presently support a non-zero .offset for indeterminately sized types
+                    # (eg. STRING/SSTRING, etc.), or a sub-element offset for basic data types.
+                    assert offremains == 0 or (
+                        attribute.parser.tag_type < STRING.tag_type
+                        and offremains % attribute.parser.struct_calcsize == 0 )
+                    completed		= end == endactual
+                data[context].data	= recs
+                log.detail( "%s Reading %3d elements %3d-%3d %s from %s: %r",
+                            self, end - beg, beg, end-1, "(done)" if completed else "(more)",
+                            attribute, data[context].data )
                 # Final .status is 0x00 if all requested elements were shipped; 0x06 if not
-                data.status		= 0x00 if end == endactual else 0x06
+                data.status		= 0x00 if completed else 0x06
                 data.pop( 'status_ext' ) # non-empty dotdict level; use pop instead of del
             else:
                 # Write Tag [Fragmented].  We know the type is right.
@@ -471,7 +555,7 @@ class Logix( Message_Router ):
 
 
 def __read_tag():
-    # Read Tag Service
+    """Read Tag Service"""
     srvc			= USINT(	 	  	context='service' )
     srvc[True]		= path	= EPATH(			context='path' )
     path[True]			= UINT(		'elements', 	context='read_tag',   extension='.elements',
@@ -481,7 +565,7 @@ Logix.register_service_parser( number=Logix.RD_TAG_REQ, name=Logix.RD_TAG_NAM,
                                short=Logix.RD_TAG_CTX, machine=__read_tag() )
 
 def __read_tag_reply():
-    # Read Tag Service (reply).  Remainder of symbols are typed data.
+    """Read Tag Service (reply).  Remainder of symbols are typed data."""
     srvc			= USINT(		 	context='service' )
     srvc[True]		= rsvd	= octets_drop(	'reserved',	repeat=1 )
     rsvd[True]		= stts	= status()
@@ -493,7 +577,7 @@ def __read_tag_reply():
                                         tag_type='.type',
                                         terminal=True )
     # For status 0x00 (Success) and 0x06 (Not all data returned), type/data follows.
-    schk[None]			= automata.decide( 'ok',	state=dtyp,
+    schk[None]			= decide(	'ok',	state=dtyp,
         predicate=lambda path=None, data=None, **kwds: data[path+'.status' if path else 'status'] in (0x00, 0x06) )
     schk[None]			= move_if(	'mark',		initializer=True,
                                                 destination='read_tag' )
@@ -502,7 +586,7 @@ Logix.register_service_parser( number=Logix.RD_TAG_RPY, name=Logix.RD_TAG_NAM + 
                                short=Logix.RD_TAG_CTX, machine=__read_tag_reply() )
 
 def __read_frag():
-    # Read Tag Fragmented Service
+    """Read Tag Fragmented Service"""
     srvc			= USINT(			context='service' )
     srvc[True]	= path		= EPATH(			context='path' )
     path[True]	= elem		= UINT(		'elements',	context='read_frag',  extension='.elements' )
@@ -513,74 +597,100 @@ Logix.register_service_parser( number=Logix.RD_FRG_REQ, name=Logix.RD_FRG_NAM,
                                short=Logix.RD_FRG_CTX, machine=__read_frag() )
 
 def __read_frag_reply():
-    # Read Tag Fragmented Service (reply).  Remainder of symbols are typed data.
-    # If no data returned (hence no 'read_frag' sub-dotdict), create one using a
-    # move_if initializer.
+    """Read Tag Fragmented Service (reply).  Remainder of symbols are typed data.  If no data returned
+    (hence no 'read_frag' sub-dotdict), create one using a move_if initializer.
+
+    If UINT data type == 0x02A0 (STRUCT), then the data is prefixed by its structure_handle in the
+    next 2 bytes.  The typed_data parser will recognize this is a STRUCT type, and parse the
+    .structure_handle and the .data
+
+    """
     srvc			= USINT(			context='service' )
     srvc[True]	 	= rsvd	= octets_drop(	'reserved',	repeat=1 )
     rsvd[True]		= stts	= status()
     stts[None]		= schk	= octets_noop(	'check',
                                                 terminal=True )
-
     dtyp			= UINT( 	'type',   	context='read_frag',  extension='.type' )
     dtyp[True]			= typed_data( 	'data',   	context='read_frag',
                                         tag_type='.type',
                                         terminal=True )
+
     # For status 0x00 (Success) and 0x06 (Not all data returned), type/data follows.
-    schk[None]			= automata.decide( 'ok',	state=dtyp,
+    schk[None]			= decide(	'ok',	state=dtyp,
         predicate=lambda path=None, data=None, **kwds: data[path+'.status' if path else 'status'] in (0x00, 0x06) )
     schk[None]			= move_if(	'mark',		initializer=True,
                                                 destination='read_frag' )
-
     return srvc
 Logix.register_service_parser( number=Logix.RD_FRG_RPY, name=Logix.RD_FRG_NAM + " Reply",
                                short=Logix.RD_FRG_CTX, machine=__read_frag_reply() )
 
 def __write_tag():
-    # Write Tag Service
+    """Write Tag Service.  If .type is STRUCT.tag_type, we'll also read the structure_tag."""
+    context			= 'write_tag'
     srvc			= USINT(		  	context='service' )
     srvc[True]		= path	= EPATH(			context='path' )
-    path[True]		= dtyp	= UINT(		'type',   	context='write_tag', extension='.type' )
-    dtyp[True]		= delm	= UINT(		'elements', 	context='write_tag', extension='.elements' )
-    delm[True]			= typed_data( 	'data',		context='write_tag' ,
-                                        tag_type='.type',
+    path[True]		= dtyp	= UINT(		'type',   	context=context, extension='.type' )
+
+    # We have to decide (below) whether to insert parsing the .structure_tag, before elements
+    delm			= UINT(		'elements', 	context=context, extension='.elements' )
+    delm[True]			= typed_data( 	'data',		context=context,
+                                        tag_type='.type', structure_tag='.structure_tag',
                                         terminal=True )
+    # After parsing .type, see if it's a STRUCT.tag_type, and get the .structure_tag before element count.
+    # If its not a STRUCT.tag_type, head straight over to parse element count; otherwise, fall thru
+    # to parse STRUCT ..
+    dtyp[None]			= decide(	'nonstruct',	state=delm,
+                                        predicate=lambda path=None, data=None, **kwds: \
+                                            STRUCT.tag_type != data['.'.join((path, context, 'type' ))])
+    dtyp[None]		= strt	= STRUCT(	limit=2,    	context=context )
+    strt[None]			= delm
     return srvc
 Logix.register_service_parser( number=Logix.WR_TAG_REQ, name=Logix.WR_TAG_NAM,
                                short=Logix.WR_TAG_CTX, machine=__write_tag() )
 
 def __write_tag_reply():
-    # Write Tag Service (reply).  In order to ensure we have a '.write_tag'
-    # attribute in the the reply dotdict, use a move_if w/ no source or
-    # destination, just an initializer; it'll initialize an attribute at the
-    # mark's context ('write_tag') to True.
+    """Write Tag Service (reply).  In order to ensure we have a '.write_tag' attribute in the the reply
+    dotdict, use a move_if w/ no source or destination, just an initializer; it'll initialize an
+    attribute at the mark's context ('write_tag') to True.
+
+    """
     srvc			= USINT(		  	context='service' )
     srvc[True]		= rsvd	= octets_drop(	'reserved',	repeat=1 )
     rsvd[True]		= stts	= status()
     stts[None]		= mark	= octets_noop(			context='write_tag',
                                                 terminal=True )
     mark.initial[None]		= move_if( 	'mark',		initializer=True )
-
     return srvc
 Logix.register_service_parser( number=Logix.WR_TAG_RPY, name=Logix.WR_TAG_NAM + " Reply",
                                short=Logix.WR_TAG_CTX, machine=__write_tag_reply() )
 
 def __write_frag():
-    # Write Tag Fragmented Service
+    """Write Tag Fragmented Service"""
+    context			= 'write_frag'
     srvc			= USINT(		  	context='service' )
     srvc[True]		= path	= EPATH(			context='path' )
-    path[True]		= dtyp	= UINT(		'type',     	context='write_frag', extension='.type' )
-    dtyp[True]		= delm	= UINT(		'elements', 	context='write_frag', extension='.elements' )
-    delm[True]		= doff	= UDINT( 	'offset',   	context='write_frag', extension='.offset' )
-    doff[True]			= typed_data( 	'data',  	context='write_frag',
-                                        tag_type='.type',
+    path[True]		= dtyp	= UINT(		'type',     	context=context, extension='.type' )
+
+    # We have to decide (below) whether to insert parsing the .structure_tag, before elements
+    delm			= UINT(		'elements', 	context=context, extension='.elements' )
+    delm[True]		= doff	= UDINT( 	'offset',   	context=context, extension='.offset' )
+    doff[True]			= typed_data( 	'data',  	context=context,
+                                        tag_type='.type', structure_tag='.structure_tag',
                                         terminal=True )
+    # After parsing .type, see if it's a STRUCT.tag_type, and get the .structure_tag before element count.
+    # If its not a STRUCT.tag_type, head straight over to parse element count; otherwise, fall thru
+    # to parse STRUCT ..
+    dtyp[None]			= decide(	'nonstruct',	state=delm,
+                                        predicate=lambda path=None, data=None, **kwds: \
+                                            STRUCT.tag_type != data['.'.join((path, context, 'type' ))])
+    dtyp[None]		= strt	= STRUCT(	limit=2,    	context=context )
+    strt[None]			= delm
     return srvc
 Logix.register_service_parser( number=Logix.WR_FRG_REQ, name=Logix.WR_FRG_NAM,
                                short=Logix.WR_FRG_CTX, machine=__write_frag() )
 
 def __write_frag_reply():
-    # Write Tag Fragmented Service (reply)
+    """Write Tag Fragmented Service (reply)"""
     srvc			= USINT(			context='service' )
     srvc[True]		= rsvd	= octets_drop(	'reserved',	repeat=1 )
     rsvd[True]		= stts	= status()
@@ -603,7 +713,7 @@ def setup_tag( key, val ):
         # doesn't exist.  Then, find the Attribute, ensuring it is consistent if it exists.
         cls,ins,att		= 0x02,1,None # The (Logix?) Message Router, by default
         if 'path' in val and val['path']:
-            cls,ins,att	= resolve( val['path'], attribute=True )
+            cls,ins,att	= resolve( val['path'], attribute=True ) # No default Attribute for new Tags
         # See if the tag's Instance exists.  If not, we'll need to create it.  If the Class'
         # "meta" Instance exists, we'll use it to create the Instance (its always at
         # Instance 0).  Otherwise, we'll create an Object class with the appropriate
@@ -623,7 +733,7 @@ def setup_tag( key, val ):
                                   ( lookup( 0x02, 0 ).__class__,),
                                   {'class_id': cls} )
             instance		= class_type( instance_id=ins )
-            log.normal( "Set Tag %-14s%-10s: %-24s Instance %3d created", key,
+            log.normal( "Set Tag %-14s%-10s: %-24s Instance %3d Created", key,
                         "@%s/%s/%s" % ( cls, ins, '?' if att is None else att ), instance, ins )
 
         # We know that the required Instance of the designated Class now exists.  Now, if
@@ -650,8 +760,8 @@ def setup_tag( key, val ):
             # or no specified path.
             attribute		= instance.attribute[str(att)] \
                                 = val.attribute
-        log.normal( "Set Tag %-14s%-10s: %-24s Instance Added: %s",
-                    key, "@%s/%s/%s" % ( cls, ins, att ), instance,
+        log.normal( "Set Tag %-14s%-10s: %-24s Instance %3d Added: %s",
+                    key, "@%s/%s/%s" % ( cls, ins, att ), instance, ins,
                     attribute if log.isEnabledFor( logging.INFO ) else misc.reprlib.repr( attribute ))
 
         # Finally, set tag 'key' to point to the (now existing) Class, Instance, Attribute
@@ -696,6 +806,7 @@ def setup( **kwds ):
     If a tags dict (or dotdict) is supplied, its key: { 'attribute': <Attribute>, 'error': <int> }
     items are used to initialize the given Tag names.
 
+    Since Tags could change between calls, we will always check (don't short-circuit...)
     """
     with setup.lock:
         if not lookup( 0x01, 1 ):
@@ -735,13 +846,38 @@ def setup( **kwds ):
         # the Tags and/or their Error codes could change between calls, we check them.  If a
         # tags[name].path is provided, then we'll try to place the Attribute at that path
         # (eg. {'segment':[{'class':123},...]})
+
+        # These tags come from external sources, and may be ASCII or Unicode (UTF-8).  Normalize them to
+        # ISO-8859-1.
         for key,val in dict.items( kwds.get( 'tags', {} )): # Don't want dotdict depth-first iteration...
-            setup_tag( key, val )
+            if sys.version_info[0] < 3 and type(key) != unicode:  # noqa: F821
+                key_utf8	= key.decode( 'utf-8' )
+            else:
+                key_utf8	= key
+            try:
+                key_bytes	= key_utf8.encode( 'iso-8859-1' )
+            except UnicodeEncodeError:
+                message = u"Setup tag {!r}; contains non-ISO-8859-1 symbols".format( key_utf8 )
+                log.error( message )
+                raise ValueError( message )
+            key_8859		= key_bytes.decode('iso-8859-1')
+            log.info( u"Setup tag {!r}, to UTF-8: {!r}, to bytes: {!r}, to ISO-8859-1: {!r}".format(
+                key, key_utf8, key_bytes, key_8859 ))
+            setup_tag( key_8859, val )
 
     return setup.ucmm
 
 setup.lock			= threading.Lock()
 setup.ucmm			= None
+
+
+def setup_reset():
+    """Clear the C*Logix UCMM instance.  In order to reset the C*Logix subsystem, you'll also have to
+    find and destroy any of the known C*Logix support instances we create above, using
+    device:lookup_reset().
+
+    """
+    setup.ucmm			= None
 
 
 def process( addr, data, **kwds ):
@@ -753,7 +889,7 @@ def process( addr, data, **kwds ):
     exception when a fatal protocol processing error occurs, and the session should be terminated
     forcefully.
 
-    When a connection is closed, a final invocation with
+    When a connection is closed, a final invocation with empty data will terminate the connection.
 
     This roughly corresponds to the CIP Connection "client" object functionality.  We parse the raw
     EtherNet/IP encapsulation to get something like this Register request, in data.request:
@@ -802,7 +938,7 @@ def process( addr, data, **kwds ):
     """
     ucmm			= setup( **kwds )
 
-    source			= automata.rememberable()
+    source			= rememberable()
     try:
         # Find the Connection Manager, and use it to parse the encapsulated EtherNet/IP request.  We
         # pass an additional request.addr, to allow the Connection Manager to identify the
@@ -823,11 +959,13 @@ def process( addr, data, **kwds ):
             if 'input' in data.request.enip:
                 source.chain( data.request.enip.input )
             with ucmm.parser as machine:
-                for i,(m,s) in enumerate( machine.run( path='request.enip', source=source, data=data )):
-                    #log.detail( "%s #%3d -> %10.10s; next byte %3d: %-10.10r: %s",
-                    #            machine.name_centered(), i, s, source.sent, source.peek(),
-                    #            repr( data ) if log.getEffectiveLevel() < logging.DETAIL else misc.reprlib.repr( data ))
-                    pass
+                with contextlib.closing( machine.run( source=source, data=data.request.enip )) as engine:
+                    for m,s in engine:
+                        pass
+                    # for i,(m,s) in enumerate( engine ):
+                    #     log.detail( "%s #%3d -> %10.10s; next byte %3d: %-10.10r: %s",
+                    #                 machine.name_centered(), i, s, source.sent, source.peek(),
+                    #                 repr( data ) if log.getEffectiveLevel() < logging.DETAIL else misc.reprlib.repr( data ))
         if log.isEnabledFor( logging.DETAIL ):
             log.detail( "EtherNet/IP CIP Request  (Client %16s): %s", addr, enip_format( data.request ))
 
@@ -858,7 +996,10 @@ def process( addr, data, **kwds ):
         # appropriate data.response.enip.input encapsulated EtherNet/IP message to return, along
         # with other response.enip... values (eg. .session_handle for a new Register Session).  The
         # enip.status should normally be 0x00; the encapsulated response will contain appropriate
-        # error indications if the encapsulated request failed.
+        # error indications if the encapsulated request failed.  However, if the entire request is
+        # no handled (ie. we are a non-routing "simple" CIP device, and a routing request is
+        # supplied, then the UCMM should fail the Unconnected Send (0x52) request with a response
+        # (0xD2) status 0x08.
         proceed			= ucmm.request( data.response, addr=addr )
         if log.isEnabledFor( logging.DETAIL ):
             log.detail( "EtherNet/IP CIP Response (Client %16s): %s", addr, enip_format( data.response ))

@@ -8,7 +8,8 @@ import threading
 
 from .misc import (
     near, scale, magnitude, centeraxis, natural, change_function, mutexmethod,
-    parse_ip_port, ip, network
+    parse_ip_port, ip, network,
+    hexdump, hexload,
 )
 
 def test_scale():
@@ -171,9 +172,16 @@ def test_parse_ip_port():
         "::192.168.0.1":		( ip("::c0a8:1"), 			None ),
         "2605:2700:0:3::4713:93e3":	( ip("2605:2700:0:3::4713:93e3"),	None ),
         "[2605:2700:0:3::4713:93e3]:80":( ip("2605:2700:0:3::4713:93e3"),	80),
-        "boogaloo.cash:443":		( "boogaloo.cash",			443 ),
+        "::1:12345":			( ip("::1"),				12345 ),
+        "Boogaloo.cash:443":		( "boogaloo.cash",			443 ),
+        "Boogaloo.cash":		( "Boogaloo.cash",			None),
+        "('host', None)":		( "host",				None ),
+        "('host', 443)":		( "host",				443 ),
+        "ttyS1":			( "ttyS1",				None ),
     }.items():
-        assert parse_ip_port( t ) == (a,p)
+        r			= parse_ip_port( t )
+        assert r == (a,p), \
+            "Expected {t} == {e!r}; got {r!r}".format( t=t, e=(a,p), r=r )
 
     for t,(a,p) in {
         "127.0.0.1":			( ip("127.0.0.1"),			123 ),
@@ -183,12 +191,96 @@ def test_parse_ip_port():
         "::192.168.0.1":		( ip("::c0a8:1"), 			123 ),
         "2605:2700:0:3::4713:93e3":	( ip("2605:2700:0:3::4713:93e3"),	123 ),
         "[2605:2700:0:3::4713:93e3]:80":( ip("2605:2700:0:3::4713:93e3"),	80),
-        "boogaloo.cash:443":		( "boogaloo.cash",			443 ),
+        "::1:12345":			( ip("::1"),				12345 ),
+        "Boogaloo.cash:443":		( "boogaloo.cash",			443 ),
+        "Boogaloo.cash":		( "Boogaloo.cash",			123 ),
+        "('host', None)":		( "host",				123 ),
+        "('host', 443)":		( "host",				443 ),
+        "ttyS1":			( "ttyS1",				123 ),
     }.items():
-        assert parse_ip_port( t, default=(None,123) ) == (a,p)
+        r			= parse_ip_port( t, default=(None,123) ) 
+        assert r == (a,p), \
+            "Expected {t} == {e!r}; got {r!r}".format( t=t, e=(a,p), r=r )
 
     assert parse_ip_port( ":11", default=('',456)) == ('',11)
     assert parse_ip_port( ":11", default=('boo',456)) == ('boo',11)
     assert parse_ip_port( "", default=('',456)) == ('',456)
 
+    assert parse_ip_port( "('host', None)", default=('',456)) == ('host',456)
+
+
     assert str( network( "192.168.1.0/24" ).broadcast_address ) == "192.168.1.255"
+
+
+def test_hexdump():
+    vals		= b'\x01\x02\x03'
+
+    dump		= hexdump( vals )
+    assert dump == '00000000:  01 02 03                                           |...|'
+    load		= hexload( dump )
+    print( repr( load ))
+    assert load == vals
+
+    dump		= hexdump( vals, quote='' )
+    assert dump == '00000000:  01 02 03                                           ...'
+    load		= hexload( dump )
+    print( repr( load ))
+    assert load == vals
+
+    dump		= hexdump( vals, quote='' )
+    assert dump == '00000000:  01 02 03                                           ...'
+    load		= hexload( dump, offset=1 )
+    print( repr( load ))
+    assert load == vals[1:]
+
+    # fill gaps in addresses, start at an offset
+    gaps		= r"""
+        00003FD0:  3F D0 00 00 00 00 00 00  00 00 00 00 12 00 00 00   |................|
+        ... something unparsable ...
+        00003FF0:  3F F0 00 00 00 00 00 00  00 00 00 00 12 00 00 00   |................|
+        00004000:  40 00 30 31 20 53 45 34  20 45 20 32 33 2e 35 63   |@.01 SE4 E 23.5c|
+    """
+    load		= hexload( gaps, offset=0x3fc0, fill=b'\xFF', skip=True )
+    dump		= hexdump( load, offset=0x3fc0 )
+    print( dump )
+    assert dump == """\
+00003FC0:  ff ff ff ff ff ff ff ff  ff ff ff ff ff ff ff ff   |................|
+00003FD0:  3f d0 00 00 00 00 00 00  00 00 00 00 12 00 00 00   |?...............|
+00003FE0:  ff ff ff ff ff ff ff ff  ff ff ff ff ff ff ff ff   |................|
+00003FF0:  3f f0 00 00 00 00 00 00  00 00 00 00 12 00 00 00   |?...............|
+00004000:  40 00 30 31 20 53 45 34  20 45 20 32 33 2e 35 63   |@.01 SE4 E 23.5c|"""
+
+    # Don't fill, skip unparsable rows
+    load		= hexload( gaps, skip=True )
+    dump		= hexdump( load )
+    print( dump )
+    assert dump == """\
+00000000:  3f d0 00 00 00 00 00 00  00 00 00 00 12 00 00 00   |?...............|
+00000010:  3f f0 00 00 00 00 00 00  00 00 00 00 12 00 00 00   |?...............|
+00000020:  40 00 30 31 20 53 45 34  20 45 20 32 33 2e 35 63   |@.01 SE4 E 23.5c|"""
+    try:
+        load		= hexload( gaps )
+    except Exception as exc:
+        assert str(exc) == "Failed to match a hex dump on row: '        ... something unparsable ...'"
+    else:
+        raise AssertionError( "Failed to raise Exception, got: {load!r}".format( load=load ))
+
+    # simpler formats that are accepted
+    simp		= """\
+        0001:01020304
+        0005:05
+        9:09
+    """
+    load		= hexload( simp )
+    print( repr( load ) )
+    dump		= hexdump( load )
+    print( dump )
+    assert dump == """\
+00000000:  01 02 03 04 05 09                                  |......|"""
+
+    load		= hexload( simp, fill=b'\x99' )
+    print( repr( load ) )
+    dump		= hexdump( load )
+    print( dump )
+    assert dump == """\
+00000000:  99 01 02 03 04 05 99 99  99 09                     |..........|"""

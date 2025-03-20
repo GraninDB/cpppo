@@ -6,7 +6,7 @@ import sys
 
 from cpppo.server import enip
 from cpppo.server.enip import client, Object, config_files
-from cpppo.server.enip.main import tags
+from cpppo.server.enip.main import tags, main as enip_main
 
 def main( argv=None, idle_service=None, **kwds ):
     """Run a cpppo.server.enip.main simulating a bunch of Tags, with the initial data specified in the
@@ -79,13 +79,13 @@ def main( argv=None, idle_service=None, **kwds ):
                 _,_,cast	= client.CIP_TYPES[typ]
                 ent.attribute[0:len( val_list )] \
                                     = [ cast( v ) for v in val_list ]
-            except Exception as exc:
+            except Exception:
                 print( "Failed to set %s[0:%d] = %r" % ( nam, len( val_list ), val_list ))
                 raise
     idle_init.complete		= False
     
     # Establish Identity, TCPIP, etc. objects, and any custom [Simulator] tags from the config file(s).
-    return enip.main( argv=argv, idle_service=idle_init, **kwds )
+    return enip_main( argv=argv, idle_service=idle_init, **kwds )
 
 
 if __name__ == "__main__":

@@ -21,12 +21,12 @@ __email__                       = "perry@hardconsulting.com"
 __copyright__                   = "Copyright (c) 2013 Hard Consulting Corporation"
 __license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
 
-#__all__				= ["logix", "client"]
-__all__				= ["client"]
+#__all__				= ["logix", "client", "ucmm", "main"]
+__all__				= ["client", "ucmm", "main"]
 
 # These form the public interface of cpppo.server.enip
 from .defaults import *
-from .main     import *
+#from .main     import *
 #from .parser   import *
 from .device   import *
-from .ucmm     import *
+from .udt      import *
