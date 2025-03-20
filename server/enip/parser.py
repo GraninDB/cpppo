@@ -57,6 +57,27 @@ log				= logging.getLogger( "enip.srv" )
 #     You must provide either a name or a context; if you provide neither, then both default to the
 # name of the class.
 #
+
+
+def int_validate( x, lo, hi ):
+    res			= int( x )
+    assert lo <= res <= hi, "Invalid %d; not in range (%d,%d)" % ( res, lo, hi)
+    return res
+
+def bool_validate( b ):
+    try:
+        res		= int( b ) != 0
+        return res
+    except ValueError:
+        pass
+    lowered = b.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    raise ValueError("Invalid %s; could not be interpreted as boolean" % b)
+
+
 class octets_base( dfa_base ):
     """Scan 'repeat' octets (default: 1), using an instance of the provided octets_state class as the
     sub-machine 'initial' state.  The sub-machine has no outgoing transitions, and will terminate

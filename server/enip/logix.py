@@ -45,9 +45,10 @@ from .device import ( Object, Attribute,
                       Message_Router, Connection_Manager, Identity, TCPIP, Logical_Segments,
                       resolve_element, resolve_tag, resolve, redirect_tag, lookup )
 from . import ucmm
-from .parser import ( BOOL, ULINT, LINT, UDINT, DINT, UINT, INT, USINT, SINT, STRUCT, STRING,
+from .parser import ( BOOL, ULINT, LINT, UDINT, DINT, UINT, INT, USINT, SINT, STRUCT, STRING, SSTRING,
                       LREAL, REAL, EPATH, typed_data, octets_encode,
-                      move_if, octets_drop, octets_noop, enip_format, status )
+                      move_if, octets_drop, octets_noop, enip_format, status,
+                      int_validate, bool_validate )
 
 log				= logging.getLogger( "enip.lgx" )
 
@@ -160,6 +161,22 @@ class Logix( Message_Router ):
     WR_FRG_CTX			= "write_frag"
     WR_FRG_REQ			= 0x53
     WR_FRG_RPY			= WR_FRG_REQ | 0x80
+
+    CIP_TYPES			= {
+        'STRING':	(STRING.tag_type, 0,				str ),
+        'SSTRING':	(SSTRING.tag_type, 0,				str ),
+        'BOOL':	(BOOL.tag_type,	BOOL.struct_calcsize,	bool_validate ),
+        'REAL': 	(REAL.tag_type,	REAL.struct_calcsize,	float ),
+        'LREAL': 	(LREAL.tag_type,	LREAL.struct_calcsize,	float ),
+        'LINT':	(LINT.tag_type,	LINT.struct_calcsize,	lambda x: int_validate( x, -2**63, 2**64-1 )), # extra range
+        'ULINT':	(ULINT.tag_type,	ULINT.struct_calcsize,	lambda x: int_validate( x,  0,     2**64-1 )),
+        'DINT':	(DINT.tag_type,	DINT.struct_calcsize,	lambda x: int_validate( x, -2**31, 2**32-1 )), # extra range
+        'UDINT':	(UDINT.tag_type,	UDINT.struct_calcsize,	lambda x: int_validate( x,  0,     2**32-1 )),
+        'INT':	(INT.tag_type,	INT.struct_calcsize,	lambda x: int_validate( x, -2**15, 2**16-1 )), # extra range
+        'UINT':	(UINT.tag_type,	UINT.struct_calcsize,	lambda x: int_validate( x,  0,     2**16-1 )),
+        'SINT':	(SINT.tag_type,	SINT.struct_calcsize,	lambda x: int_validate( x, -2**7,  2**8-1 )),  # extra range
+        'USINT':	(USINT.tag_type,	USINT.struct_calcsize,	lambda x: int_validate( x,  0,     2**8-1 )),
+    }
 
     def reply_elements( self, attribute, data, context ):
         """Given an attribute, a data.service specifying a Read/Write Tag [Fragmented] reply, a

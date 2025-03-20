@@ -45,14 +45,13 @@ from .device import ( Object, Attribute,
                       Message_Router, Connection_Manager, Identity, TCPIP, Logical_Segments,
                       resolve_element, resolve_tag, resolve, redirect_tag, lookup )
 from . import ucmm
-from .omron_parser import ( UDINT, DINT, LINT, UINT, INT, USINT, SINT, REAL, LREAL, EPATH, STRING, SSTRING, typed_data,
-                      move_if, octets_drop, octets_noop, enip_format, status )
+from .omron_parser import (UDINT, DINT, LINT, UINT, INT, USINT, SINT, REAL,
+                           LREAL, EPATH, STRING, SSTRING, BOOL, OMRDATN, typed_data,
+                           move_if, octets_drop, octets_noop, enip_format, status )
 
-from .omron_parser import ( BOOL, OMRDATN )
+from .parser import (int_validate, bool_validate)
 
 log				= logging.getLogger( "enip.omron" )
-
-
 
 #
 # client.CIP_TYPES
@@ -65,45 +64,11 @@ log				= logging.getLogger( "enip.omron" )
 # unsigned; just that it fits into the target data type.
 #
 
-def int_validate( x, lo, hi ):
-    res			= int( x )
-    assert lo <= res <= hi, "Invalid %d; not in range (%d,%d)" % ( res, lo, hi)
-    return res
-
-def bool_validate( b ):
-    try:
-        res		= int( b ) != 0
-        return res
-    except ValueError:
-        pass
-    lowered = b.lower()
-    if lowered == "true":
-        return True
-    if lowered == "false":
-        return False
-    raise ValueError("Invalid %s; could not be interpreted as boolean" % b)
-
 def omrdatn_validate( b ):
     d = datetime.strptime(b, "%Y-%m-%d %H:%M:%S", ).replace(tzinfo=tz.gettz('UTC'))
 
     res = int(d.timestamp()) * 1000000000
     return res
-
-CIP_TYPES			= {
-    'STRING':	(STRING.tag_type,   0,                          str ),
-    'SSTRING':	(SSTRING.tag_type,  0,                          str ),
-    'BOOL':	    (BOOL.tag_type,	    BOOL.struct_calcsize,       bool_validate ),
-    'REAL': 	(REAL.tag_type,     REAL.struct_calcsize,	    float ),
-    'LREAL': 	(LREAL.tag_type,	LREAL.struct_calcsize,	    float ),
-    'LINT':	    (LINT.tag_type,     LINT.struct_calcsize,	    lambda x: int_validate( x, -2**63, 2**64-1 )), # extra range
-    'DINT':	    (DINT.tag_type,     DINT.struct_calcsize,	    lambda x: int_validate( x, -2**31, 2**32-1 )), # extra range
-    'UDINT':	(UDINT.tag_type,    UDINT.struct_calcsize,	    lambda x: int_validate( x,  0,     2**32-1 )),
-    'INT':	    (INT.tag_type,      INT.struct_calcsize,	    lambda x: int_validate( x, -2**15, 2**16-1 )), # extra range
-    'UINT':	    (UINT.tag_type,     UINT.struct_calcsize,	    lambda x: int_validate( x,  0,     2**16-1 )),
-    'SINT':	    (SINT.tag_type,     SINT.struct_calcsize,	    lambda x: int_validate( x, -2**7,  2**8-1 )),  # extra range
-    'USINT':	(USINT.tag_type,	USINT.struct_calcsize,	    lambda x: int_validate( x,  0,     2**8-1 )),
-    'OMRDATN':  (OMRDATN.tag_type,  OMRDATN.struct_calcsize,    omrdatn_validate),
-}
 
 # Unknown Object, Class 102, Instance 1.  This Object is unknown, but it returns data equivalent to
 # the following Attributes, when queried.
@@ -212,6 +177,22 @@ class Omron( Message_Router ):
     WR_FRG_CTX			= "write_frag"
     WR_FRG_REQ			= 0x53
     WR_FRG_RPY			= WR_FRG_REQ | 0x80
+
+    CIP_TYPES			= {
+        'STRING':	(STRING.tag_type,   0,                          str ),
+        'SSTRING':	(SSTRING.tag_type,  0,                          str ),
+        'BOOL':	    (BOOL.tag_type,	    BOOL.struct_calcsize,       bool_validate ),
+        'REAL': 	(REAL.tag_type,     REAL.struct_calcsize,	    float ),
+        'LREAL': 	(LREAL.tag_type,	LREAL.struct_calcsize,	    float ),
+        'LINT':	    (LINT.tag_type,     LINT.struct_calcsize,	    lambda x: int_validate( x, -2**63, 2**64-1 )), # extra range
+        'DINT':	    (DINT.tag_type,     DINT.struct_calcsize,	    lambda x: int_validate( x, -2**31, 2**32-1 )), # extra range
+        'UDINT':	(UDINT.tag_type,    UDINT.struct_calcsize,	    lambda x: int_validate( x,  0,     2**32-1 )),
+        'INT':	    (INT.tag_type,      INT.struct_calcsize,	    lambda x: int_validate( x, -2**15, 2**16-1 )), # extra range
+        'UINT':	    (UINT.tag_type,     UINT.struct_calcsize,	    lambda x: int_validate( x,  0,     2**16-1 )),
+        'SINT':	    (SINT.tag_type,     SINT.struct_calcsize,	    lambda x: int_validate( x, -2**7,  2**8-1 )),  # extra range
+        'USINT':	(USINT.tag_type,	USINT.struct_calcsize,	    lambda x: int_validate( x,  0,     2**8-1 )),
+        'OMRDATN':  (OMRDATN.tag_type,  OMRDATN.struct_calcsize,    omrdatn_validate),
+    }
 
     def reply_elements( self, attribute, data, context ):
         """Given an attribute, a data.service specifying a Read/Write Tag [Fragmented] reply, a

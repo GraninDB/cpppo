@@ -26,6 +26,7 @@ dist/
 localtests/localtest.ini
 poetry.lock
 .cache/
+.vscode/
 *.aux
 *.toc
 /ttyS[0-9]

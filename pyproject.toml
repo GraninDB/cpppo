@@ -7,6 +7,7 @@ authors = [
 ]
 readme = "README.org"
 requires-python = ">=3.8"
+poetry = ">2.1.0"
 dependencies = [
     "greenery (>=2.0,<3.0)"
 ]

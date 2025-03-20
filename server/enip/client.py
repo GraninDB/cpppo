@@ -171,39 +171,6 @@ def parse_context( sender_context ):
 # unsigned; just that it fits into the target data type.
 #
 
-def int_validate( x, lo, hi ):
-    res			= int( x )
-    assert lo <= res <= hi, "Invalid %d; not in range (%d,%d)" % ( res, lo, hi)
-    return res
-
-def bool_validate( b ):
-    try:
-        res		= int( b ) != 0
-        return res
-    except ValueError:
-        pass
-    lowered = b.lower()
-    if lowered == "true":
-        return True
-    if lowered == "false":
-        return False
-    raise ValueError("Invalid %s; could not be interpreted as boolean" % b)
-
-CIP_TYPES			= {
-    'STRING':	(parser.STRING.tag_type, 0,				str ),
-    'SSTRING':	(parser.SSTRING.tag_type, 0,				str ),
-    'BOOL':	(parser.BOOL.tag_type,	parser.BOOL.struct_calcsize,	bool_validate ),
-    'REAL': 	(parser.REAL.tag_type,	parser.REAL.struct_calcsize,	float ),
-    'LREAL': 	(parser.LREAL.tag_type,	parser.LREAL.struct_calcsize,	float ),
-    'LINT':	(parser.LINT.tag_type,	parser.LINT.struct_calcsize,	lambda x: int_validate( x, -2**63, 2**64-1 )), # extra range
-    'ULINT':	(parser.ULINT.tag_type,	parser.ULINT.struct_calcsize,	lambda x: int_validate( x,  0,     2**64-1 )),
-    'DINT':	(parser.DINT.tag_type,	parser.DINT.struct_calcsize,	lambda x: int_validate( x, -2**31, 2**32-1 )), # extra range
-    'UDINT':	(parser.UDINT.tag_type,	parser.UDINT.struct_calcsize,	lambda x: int_validate( x,  0,     2**32-1 )),
-    'INT':	(parser.INT.tag_type,	parser.INT.struct_calcsize,	lambda x: int_validate( x, -2**15, 2**16-1 )), # extra range
-    'UINT':	(parser.UINT.tag_type,	parser.UINT.struct_calcsize,	lambda x: int_validate( x,  0,     2**16-1 )),
-    'SINT':	(parser.SINT.tag_type,	parser.SINT.struct_calcsize,	lambda x: int_validate( x, -2**7,  2**8-1 )),  # extra range
-    'USINT':	(parser.USINT.tag_type,	parser.USINT.struct_calcsize,	lambda x: int_validate( x,  0,     2**8-1 )),
-}
 
 def parse_operations( tags, fragment=False, int_type=None, **kwds ):
     """Given a sequence of (string) tags, deduce the set of I/O desired operations, yielding each one.

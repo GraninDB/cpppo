@@ -44,12 +44,21 @@ if __name__ == "__main__":
     fragment = False    # Don't force Read/Write Tag Fragmented
     timeout = 1.0		# Any PLC I/O fails if it takes > 1s
     printing = True		# Print a summary of I/O
-#   tags = ["Blocks[1,1,1].ID", "Test_input_bool", "Test_input_string"]
-#   tags = ["Blocks[1,1,1].ID"]
-    tags = ["Blocks[1,1,1].Length_Stamp_Start"]
-#   tags = ["Blocks[3,1,1].Foam_type"]
-#   tags = ["Blocks[3,1,1].Racks_IN.M_Date"]
-#   tags = ["Test_input_bool"]
+#    tags = ["Blocks[8,1,1].ID", "Test_input_bool", "Test_input_string"]    # several parameters         34
+#    tags = ["Blocks[8,1,1].ID"]                                            # UDINT                      34
+#    tags = ["Blocks[2,1,1].ID"]                                            # LINT                       22
+#    tags = ["Blocks[8,1,1].Length_Stamp_Start"]                            # LREAL                      34
+#    tags = ["Blocks[2,1,1].Length_Stamp_Start"]                            # REAL                       22
+#    tags = ["Blocks[2,1,1].Racks_Time"]                                    # DINT                       22
+#    tags = ["Blocks[8,1,1].Foam_type"]                                     # STRING
+#    tags = ["Blocks[6,1,1].Racks_IN.M_Date"]                               # DATE_AND_TIME__NSEC OMRON
+#    tags = ["Test_input_bool"]                                             # BOOL
+#    tags = ["Test_output_string"]                                          # STRING
+
+#    tags = ["Test_output_string=(STRING)Test1"]                                          # STRING     - write with odd number of characters does not work
+#03-21 11:21:40.271 MainThread enip.cli WARNING  validate   Client Single Write Tag  Test_output_string returned non-zero status: Status 21
+#  Test_output_string              <= ['Test1']: 'Status 21 '
+
 
     with client.connector(host=host, port=port, timeout=timeout, dialect=dialect) as connection:
         operations = client.parse_operations(tags)
