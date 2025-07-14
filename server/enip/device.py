@@ -63,7 +63,7 @@ from ...automata import ( type_str_base,
 from ... import misc
 from . import defaults
 from .parser import ( UDINT, DINT, DWORD, INT, UINT, WORD, USINT,
-                      EPATH, EPATH_padded, SSTRING, STRING, IFACEADDRS,
+                      EPATH, EPATH_padded, SSTRING, IFACEADDRS,
                       typed_data,
                       octets, octets_encode, octets_noop, octets_drop, move_if,
                       enip_format, status )

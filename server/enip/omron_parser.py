@@ -34,16 +34,16 @@ import logging
 import struct
 import itertools
 
-from ...automata import (type_str_base, is_listlike, dfa, decide)
+from ...dotdict import dotdict
+from ...automata import (type_str_base, is_listlike, dfa, decide, string_bytes)
+#from ...automata import (type_str_base, is_listlike, dfa, decide)
 
 from datetime import datetime, timezone
 
-from .parser import octets_base, octets, octets_encode, octets_struct, octets_noop, \
-                    octets_drop, words_base, words, TYPE, STRUCT, UDINT, UDINT_network, SINT, USINT, INT, \
-                    UINT, DINT, LINT, ULINT, REAL, LREAL, SSTRING, STRING, INT_network, UINT_network, WORD, IPADDR_network, enip_format, \
-                    EPATH, EPATH_padded, move_if, route_path, legacy_CPF_0x0001, connection_ID, unconnected_send, \
-                    communications_service, identity_object, send_data, register, unregister, CPF, CIP, status, \
-                    enip_machine, enip_encode
+from .parser import octets_noop, \
+                    octets_drop, TYPE, STRUCT, UDINT, SINT, USINT, INT, \
+                    UINT, DINT, LINT, ULINT, REAL, LREAL, move_if, \
+                    CIP, status, enip_format, enip_machine, enip_encode
 
 from .parser import typed_data as common_typed_data
 
@@ -74,8 +74,59 @@ class BOOL(TYPE):
         return encoding if encoding == b'\x00' else b'\xff'
 
 
-# DATE_AND_TIME_NSEC 0A Vendor Specific
-class OMRDATN(TYPE):
+class OMRSTRING(STRUCT):
+    """Parses/produces a EtherNet/IP String:
+        .OMRSTRING.length            UINT        2
+        .OMRSTRING.string            octets[*]    .length+.length%2
+    The produce classmethod accepts this structure, or just a plain Python str, and will output the
+    equivalent length+string.  If a zero length is provided, no string is parsed, and an empty
+    string returned.  Much like SSTRING, except:
+    - a 2-byte UINT specifies the length
+    - the string is padded to an even number of words with a NUL byte, if necessary
+    """
+    tag_type = 0x00D0
+    struct_calcsize = 80 # Average OMRSTRING size used for estimations
+    def __init__(self, name=None, **kwds):
+        name = name or kwds.setdefault('context', self.__class__.__name__)
+        leng = UINT('length', context='length')
+        leng[None] = move_if('empty',  destination='.string', initializer='',
+                             predicate=lambda path=None, data=None, **kwds: 0 == data[path].length,
+                             state=octets_noop('done',
+                                               terminal=True))
+        leng[None] = sbdy = string_bytes('string',
+                                         limit='..length',
+                                         initial='.*',    decode='iso-8859-1')
+        sbdy[None] = decide('string_even',
+                            predicate=lambda path=None, data=None, **kwds: 0 == data[path].length % 2,
+                            state=octets_noop('done',
+                                                        terminal=True))
+        sbdy[None] = octets_drop('pad', repeat=1,
+                                 terminal=True)
+        super(OMRSTRING, self).__init__(name=name, initial=leng, **kwds)
+    @classmethod
+    def produce(cls, value):
+        """Truncate or NUL-fill the provided .string to the given .length (if provided and not None).
+        Then, emit the (two byte) length+string+pad.  Accepts either a {.length: ..., .string:... }
+        dotdict, or a plain string.
+        """
+        result = b''
+        if isinstance(value, type_str_base):
+            value = dotdict({'string': value })
+        encoded = value.string.encode('iso-8859-1')
+        # If .length doesn't exist or is None, set the length to the actual string length
+        actual = len(encoded)
+        desired = value.setdefault('length', actual)
+        if desired is None:
+            value.length = actual
+        assert value.length < 1<<16, "OMRSTRING must be < 65536 bytes in length; %r" % value
+        result += UINT.produce(value.length)
+        result += encoded[:value.length]
+        if actual < value.length:
+            result + b'\x00' * (value.length - actual)
+        return result
+
+
+class OMRDATN(TYPE):     # DATE_AND_TIME_NSEC 0A Vendor Specific
     """An EtherNet/IP DATE_AND_TIME_NSEC, OMRON VENDOR SPECIFIC DATA TYPE, READ/WRITE as ULINT; 8 bytes"""
     tag_type = 0x000a
     struct_format = '<Q'
@@ -107,22 +158,23 @@ class typed_data(common_typed_data):
 
     data type   supported   type value      size
 
-    BOOL        yes         = 0x00c1        2 byte (0x0_c1, _=[0-7] indicates relevant bit)
-    SINT        yes         = 0x00c2        1 byte
-    INT         yes         = 0x00c3        2 bytes
-    DINT        yes         = 0x00c4        4 bytes
-    REAL        yes         = 0x00ca        4 bytes
-    LREAL       yes         = 0x00cb        8 bytes  (!!! python side - float)
-    USINT       yes         = 0x00c6        1 byte
-    UINT        yes         = 0x00c7        2 bytes
-    WORD                    = 0x00d2        2 byte (16-bit boolean array)
-    UDINT       yes         = 0x00c8        4 bytes
-    DWORD                   = 0x00d3        4 byte (32-bit boolean array)
-    LINT        yes         = 0x00c5        8 byte
-    ULINT       yes         = 0x00c9        8 byte
-    SSTRING     yes         = 0x00da        1 byte length + <length> data
-    STRING      yes         = 0x00d0        2 byte length + <length> data (rounded up to 2 bytes)
-    OMRDATN     yes         = 0x000a        8 bytes
+    BOOL        yes = 0x00c1        2 byte (0x0_c1, _=[0-7] indicates relevant bit)
+    SINT        yes = 0x00c2        1 byte
+    INT         yes = 0x00c3        2 bytes
+    DINT        yes = 0x00c4        4 bytes
+    REAL        yes = 0x00ca        4 bytes
+    LREAL       yes = 0x00cb        8 bytes  (!!! python side - float)
+    USINT       yes = 0x00c6        1 byte
+    UINT        yes = 0x00c7        2 bytes
+    WORD = 0x00d2        2 byte (16-bit boolean array)
+    UDINT       yes = 0x00c8        4 bytes
+    DWORD = 0x00d3        4 byte (32-bit boolean array)
+    LINT        yes = 0x00c5        8 byte
+    ULINT       yes = 0x00c9        8 byte
+    SSTRING     yes = 0x00da        1 byte length + <length> data
+    STRING      yes = 0x00d0        2 byte length + <length> data (rounded up to 2 bytes)
+    OMRSTRING   yes = 0x00d0        2 byte length + <length> data
+    OMRDATN     yes = 0x000a        8 bytes
     """
     TYPES_SUPPORTED = {
         BOOL.tag_type: BOOL,
@@ -136,8 +188,7 @@ class typed_data(common_typed_data):
         UDINT.tag_type: UDINT,
         REAL.tag_type: REAL,
         LREAL.tag_type: LREAL,
-        SSTRING.tag_type: SSTRING,
-        STRING.tag_type: STRING,
+        OMRSTRING.tag_type: OMRSTRING,
         OMRDATN.tag_type: OMRDATN,
     }
 
@@ -217,24 +268,12 @@ class typed_data(common_typed_data):
                              destination='.data', initializer=lambda **kwds: [],
                              state=dbld)
 
-        # Since a parsed "[S]STRING": { "string": "abc", "length": 3 } is multiple layers deep, and we
-        # want to completely eliminate the target container in preparation for the next loop, we'll
-        # need to move it up one layer, and then into the final target.
-        sstd = octets_noop('endsstring',
-                           terminal=True)
-        sstd[True] = sstp = SSTRING()
-        sstp[None] = move_if('movsstrings', source='.SSTRING.string',
-                             destination='.SSTRING')
-        sstp[None] = move_if('movsstring', source='.SSTRING',
-                             destination='.data', initializer=lambda **kwds: [],
-                             state=sstd)
-
         sttd = octets_noop('end_string',
                            terminal=True)
-        sttd[True] = sttp = STRING()
-        sttp[None] = move_if('mov_strings', source='.STRING.string',
-                             destination='.STRING')
-        sttp[None] = move_if('mov_string', source='.STRING',
+        sttd[True] = sttp = OMRSTRING()
+        sttp[None] = move_if('mov_strings', source='.OMRSTRING.string',
+                             destination='.OMRSTRING')
+        sttp[None] = move_if('mov_string', source='.OMRSTRING',
                              destination='.data', initializer=lambda **kwds: [],
                              state=sttd)
 
@@ -275,12 +314,9 @@ class typed_data(common_typed_data):
         slct[None] = decide('LREAL', state=dbld,
                             predicate=lambda path=None, data=None, **kwds:
                             LREAL.tag_type == (data[path+tag_type] if isinstance(tag_type, type_str_base) else tag_type))
-        slct[None] = decide('SSTRING', state=sstd,
+        slct[None] = decide('OMRSTRING', state=sttd,
                             predicate=lambda path=None, data=None, **kwds:
-                            SSTRING.tag_type == (data[path+tag_type] if isinstance(tag_type, type_str_base) else tag_type))
-        slct[None] = decide('STRING', state=sttd,
-                            predicate=lambda path=None, data=None, **kwds:
-                            STRING.tag_type == (data[path+tag_type] if isinstance(tag_type, type_str_base) else tag_type))
+                            OMRSTRING.tag_type == (data[path+tag_type] if isinstance(tag_type, type_str_base) else tag_type))
         slct[None] = decide('OMRDATN', state=omrdatnd,
                             predicate=lambda path=None, data=None, **kwds:
                             OMRDATN.tag_type == (data[path+tag_type] if isinstance(tag_type, type_str_base) else tag_type))

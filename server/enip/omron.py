@@ -16,14 +16,14 @@
 
 from __future__ import absolute_import, print_function, division
 try:
-    from future_builtins import zip, map # Use Python 3 "lazy" zip, map
+    from future_builtins import zip, map  # Use Python 3 "lazy" zip, map
 except ImportError:
     pass
 
-__author__                      = "Perry Kundert"
-__email__                       = "perry@hardconsulting.com"
-__copyright__                   = "Copyright (c) 2013 Hard Consulting Corporation"
-__license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
+__author__ = "Perry Kundert"
+__email__ = "perry@hardconsulting.com"
+__copyright__ = "Copyright (c) 2013 Hard Consulting Corporation"
+__license__ = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
 
 
 """
@@ -41,28 +41,18 @@ from datetime import datetime
 
 from ...dotdict import dotdict
 from ... import automata, misc
-from .device import ( Object, Attribute,
+from .device import (Object, Attribute,
                       Message_Router, Connection_Manager, Identity, TCPIP, Logical_Segments,
-                      resolve_element, resolve_tag, resolve, redirect_tag, lookup )
+                      resolve_element, resolve_tag, resolve, redirect_tag, lookup)
 from . import ucmm
 from .omron_parser import (UDINT, DINT, LINT, UINT, INT, USINT, SINT, REAL,
-                           LREAL, EPATH, STRING, SSTRING, BOOL, OMRDATN, typed_data,
+                           LREAL, OMRSTRING, BOOL, OMRDATN, typed_data,
                            move_if, octets_drop, octets_noop, enip_format, status )
 
-from .parser import (int_validate, bool_validate)
+from .parser import (int_validate, bool_validate, STRING, SSTRING, EPATH)
 
-log				= logging.getLogger( "enip.omron" )
+log	= logging.getLogger( "enip.omron" )
 
-#
-# client.CIP_TYPES
-#
-#     The supported CIP data types, and their CIP 'tag_type' values, byte sizes and validators.  We
-# are generous with the "signed" types (eg. SINT, INT, DINT), and we actually allow the full
-# unsigned range, plus the negative range.  There is little risk to doing this, as all provided
-# values will fit legitimately into the data type without loss.  It does however, make acceptance of
-# automatically generated data easier, as we don't need to really know if the data is signed or
-# unsigned; just that it fits into the target data type.
-#
 
 def omrdatn_validate( b ):
     d = datetime.strptime(b, "%Y-%m-%d %H:%M:%S", ).replace(tzinfo=tz.gettz('UTC'))
@@ -70,59 +60,9 @@ def omrdatn_validate( b ):
     res = int(d.timestamp()) * 1000000000
     return res
 
-# Unknown Object, Class 102, Instance 1.  This Object is unknown, but it returns data equivalent to
-# the following Attributes, when queried.
-# Request:
-#     # pkt8
-#     # "8","0.153249000","192.168.222.128","10.220.104.180","CIP","100","Get Attribute All"
-#     gaa_008_request 		= bytes(bytearray([
-#                                             0x6f, 0x00, #/* 9.w...o. */
-#         0x16, 0x00, 0x01, 0x1e, 0x02, 0x11, 0x00, 0x00, #/* ........ */
-#         0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, #/* ........ */
-#         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, #/* ........ */
-#         0x00, 0x00, 0x05, 0x00, 0x02, 0x00, 0x00, 0x00, #/* ........ */
-#         0x00, 0x00, 0xb2, 0x00, 0x06, 0x00, 0x01, 0x02, #/* ........ */
-#         0x20, 0x66, 0x24, 0x01                          #/*  f$. */
-#     ]))
-#
-#     Parsed:
-#     {
-#         "enip.CIP.send_data.CPF.count": 2,
-#         "enip.CIP.send_data.CPF.item[0].length": 0,
-#         "enip.CIP.send_data.CPF.item[0].type_id": 0,
-#         "enip.CIP.send_data.CPF.item[1].length": 6,
-#         "enip.CIP.send_data.CPF.item[1].type_id": 178,
-#         "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.segment[0].class": 102,
-#         "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.segment[1].instance": 1,
-#         "enip.CIP.send_data.CPF.item[1].unconnected_send.request_path.size": 2,
-#         "enip.CIP.send_data.CPF.item[1].unconnected_send.service": 1,
-#         "enip.CIP.send_data.interface": 0,
-#         "enip.CIP.send_data.timeout": 5,
-#         "enip.command": 111,
-#         "enip.length": 22,
-#         "enip.options": 0,
-#         "enip.session_handle": 285351425,
-#         "enip.status": 0,
-#     }
-#
-# Response:
-#     # pkt10
-#     # "10","0.247332000","10.220.104.180","192.168.222.128","CIP","116","Success"
-#     gaa_008_reply 		= bytes(bytearray([
-#                                             0x6f, 0x00, #/* ..T...o. */
-#         0x26, 0x00, 0x01, 0x1e, 0x02, 0x11, 0x00, 0x00, #/* &....... */
-#         0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, #/* ........ */
-#         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, #/* ........ */
-#         0x00, 0x00, 0x05, 0x00, 0x02, 0x00, 0x00, 0x00, #/* ........ */
-#         0x00, 0x00, 0xb2, 0x00, 0x16, 0x00, 0x81,
-#
-#                                                   0x00, #/* ........ */
-# >       0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, #/* ........ */
-# >       0x2d, 0x00, 0x01, 0x00, 0x01, 0x01, 0xb1, 0x2a, #/* -......* */
-# >       0x1b, 0x00, 0x0a, 0x00                          #/* .... */
-#     ]))
+
 class Unknown_Object( Object ):
-    class_id			= 0x66 # 102
+    class_id = 0x66  # 102
 
     def __init__( self, name=None, **kwds ):
         super( Unknown_Object, self ).__init__( name=name, **kwds )
@@ -132,18 +72,18 @@ class Unknown_Object( Object ):
             pass
         else:
             # Instance Attributes (these example defaults are from a Rockwell Omron PLC)
-            self.attribute['1']	= Attribute( 'Unknown 1', 		UDINT, default=0x00000000 )
-            self.attribute['2']	= Attribute( 'Unknown 2', 		UDINT, default=0x00000008 )
-            self.attribute['3']	= Attribute( 'Unknown 3', 		USINT, default=0x00 )
-            self.attribute['4']	= Attribute( 'Unknown 4', 		UINT,  default=0x002d )
-            self.attribute['5']	= Attribute( 'Unknown 5', 		UINT,  default=0x0001 )
-            self.attribute['6']	= Attribute( 'Unknown 6', 		USINT, default=0x01 )
-            self.attribute['7']	= Attribute( 'Unknown 7', 		USINT, default=0x01 )
-            self.attribute['8']	= Attribute( 'Unknown 8', 		USINT, default=0x01 )
-            self.attribute['9']	= Attribute( 'Unknown 9', 		USINT, default=0xb1 )
-            self.attribute['10']= Attribute( 'Unknown 10', 		USINT, default=0x2a )
-            self.attribute['11']= Attribute( 'Unknown 11', 		UINT,  default=0x001b )
-            self.attribute['12']= Attribute( 'Unknown 12', 		UINT,  default=0x000a )
+            self.attribute['1']	= Attribute( 'Unknown 1', UDINT, default=0x00000000 )
+            self.attribute['2']	= Attribute( 'Unknown 2', UDINT, default=0x00000008 )
+            self.attribute['3']	= Attribute( 'Unknown 3', USINT, default=0x00 )
+            self.attribute['4']	= Attribute( 'Unknown 4', UINT,  default=0x002d )
+            self.attribute['5']	= Attribute( 'Unknown 5', UINT,  default=0x0001 )
+            self.attribute['6']	= Attribute( 'Unknown 6', USINT, default=0x01 )
+            self.attribute['7']	= Attribute( 'Unknown 7', USINT, default=0x01 )
+            self.attribute['8']	= Attribute( 'Unknown 8', USINT, default=0x01 )
+            self.attribute['9']	= Attribute( 'Unknown 9', USINT, default=0xb1 )
+            self.attribute['10'] = Attribute( 'Unknown 10', USINT, default=0x2a )
+            self.attribute['11'] = Attribute( 'Unknown 11', UINT,  default=0x001b )
+            self.attribute['12'] = Attribute( 'Unknown 12', UINT,  default=0x000a )
 
 
 class Omron( Message_Router ):
@@ -159,39 +99,68 @@ class Omron( Message_Router ):
     # TODO: MAX_BYTES is arbitrary.  We're supposed to be able to return data sufficient to fill the
     # remaining reply package size, but how can we do that?  We'd have to be informed of the
     # remaining packet size available, as an argument to the produce method...
-    MAX_BYTES			= 500
+    MAX_BYTES = 500
 
-    RD_TAG_NAM			= "Read Tag"
-    RD_TAG_CTX			= "read_tag"
-    RD_TAG_REQ			= 0x4c
-    RD_TAG_RPY			= RD_TAG_REQ | 0x80
-    RD_FRG_NAM			= "Read Tag Fragmented"
-    RD_FRG_CTX			= "read_frag"
-    RD_FRG_REQ			= 0x52
-    RD_FRG_RPY			= RD_FRG_REQ | 0x80
-    WR_TAG_NAM			= "Write Tag"
-    WR_TAG_CTX			= "write_tag"
-    WR_TAG_REQ			= 0x4d
-    WR_TAG_RPY			= WR_TAG_REQ | 0x80
-    WR_FRG_NAM			= "Write Tag Fragmented"
-    WR_FRG_CTX			= "write_frag"
-    WR_FRG_REQ			= 0x53
-    WR_FRG_RPY			= WR_FRG_REQ | 0x80
+    RD_TAG_NAM = "Read Tag"
+    RD_TAG_CTX = "read_tag"
+    RD_TAG_REQ = 0x4c
+    RD_TAG_RPY = RD_TAG_REQ | 0x80
+    RD_FRG_NAM = "Read Tag Fragmented"
+    RD_FRG_CTX = "read_frag"
+    RD_FRG_REQ = 0x52
+    RD_FRG_RPY = RD_FRG_REQ | 0x80
+    WR_TAG_NAM = "Write Tag"
+    WR_TAG_CTX = "write_tag"
+    WR_TAG_REQ = 0x4d
+    WR_TAG_RPY = WR_TAG_REQ | 0x80
+    WR_FRG_NAM = "Write Tag Fragmented"
+    WR_FRG_CTX = "write_frag"
+    WR_FRG_REQ = 0x53
+    WR_FRG_RPY = WR_FRG_REQ | 0x80
 
     CIP_TYPES			= {
-        'STRING':	(STRING.tag_type,   0,                          str ),
-        'SSTRING':	(SSTRING.tag_type,  0,                          str ),
-        'BOOL':	    (BOOL.tag_type,	    BOOL.struct_calcsize,       bool_validate ),
-        'REAL': 	(REAL.tag_type,     REAL.struct_calcsize,	    float ),
-        'LREAL': 	(LREAL.tag_type,	LREAL.struct_calcsize,	    float ),
-        'LINT':	    (LINT.tag_type,     LINT.struct_calcsize,	    lambda x: int_validate( x, -2**63, 2**64-1 )), # extra range
-        'DINT':	    (DINT.tag_type,     DINT.struct_calcsize,	    lambda x: int_validate( x, -2**31, 2**32-1 )), # extra range
-        'UDINT':	(UDINT.tag_type,    UDINT.struct_calcsize,	    lambda x: int_validate( x,  0,     2**32-1 )),
-        'INT':	    (INT.tag_type,      INT.struct_calcsize,	    lambda x: int_validate( x, -2**15, 2**16-1 )), # extra range
-        'UINT':	    (UINT.tag_type,     UINT.struct_calcsize,	    lambda x: int_validate( x,  0,     2**16-1 )),
-        'SINT':	    (SINT.tag_type,     SINT.struct_calcsize,	    lambda x: int_validate( x, -2**7,  2**8-1 )),  # extra range
-        'USINT':	(USINT.tag_type,	USINT.struct_calcsize,	    lambda x: int_validate( x,  0,     2**8-1 )),
-        'OMRDATN':  (OMRDATN.tag_type,  OMRDATN.struct_calcsize,    omrdatn_validate),
+        'OMRSTRING':(OMRSTRING.tag_type, 
+                     0, 
+                     str ),
+        'STRING': (STRING.tag_type, 
+                   0, 
+                   str ),
+        'SSTRING': (SSTRING.tag_type, 
+                    0, 
+                    str ),
+        'BOOL': (BOOL.tag_type,	
+                 BOOL.struct_calcsize, 
+                 bool_validate ),
+        'REAL': (REAL.tag_type, 
+                 REAL.struct_calcsize, 
+                 float ),
+        'LREAL': (LREAL.tag_type, 
+                  LREAL.struct_calcsize, 
+                  float ),
+        'LINT': (LINT.tag_type, 
+                 LINT.struct_calcsize, 
+                 lambda x: int_validate( x, -2**63, 2**64-1 )),  # extra range
+        'DINT': (DINT.tag_type, 
+                 DINT.struct_calcsize, 
+                 lambda x: int_validate( x, -2**31, 2**32-1 )),  # extra range
+        'UDINT': (UDINT.tag_type, 
+                  UDINT.struct_calcsize, 
+                  lambda x: int_validate( x,  0,     2**32-1 )),
+        'INT': (INT.tag_type, 
+                INT.struct_calcsize, 
+                lambda x: int_validate( x, -2**15, 2**16-1 )),  # extra range
+        'UINT': (UINT.tag_type, 
+                 UINT.struct_calcsize, 
+                 lambda x: int_validate( x,  0,     2**16-1 )),
+        'SINT': (SINT.tag_type, 
+                 SINT.struct_calcsize, 
+                 lambda x: int_validate( x, -2**7,  2**8-1 )),  # extra range
+        'USINT': (USINT.tag_type, 
+                  USINT.struct_calcsize, 
+                  lambda x: int_validate( x,  0,     2**8-1 )),
+        'OMRDATN': (OMRDATN.tag_type, 
+                    OMRDATN.struct_calcsize, 
+                    omrdatn_validate),
     }
 
     def reply_elements( self, attribute, data, context ):
@@ -221,13 +190,13 @@ class Omron( Message_Router ):
         """
         assert data.service in (self.RD_TAG_RPY,self.RD_FRG_RPY,self.WR_TAG_RPY,self.WR_FRG_RPY), \
             "Unable to calculate element range for unknown service: %d" % ( data.service )
-        index			= resolve_element( data.path )
+        index = resolve_element( data.path )
         assert type( index ) is tuple and len( index ) == 1, \
             "Unsupported/Multi-dimensional index: %s" % index
-        siz			= attribute.parser.struct_calcsize
-        off			= 0
+        siz = attribute.parser.struct_calcsize
+        off = 0
         if data.service in (self.RD_FRG_RPY, self.WR_FRG_RPY):
-            off			= data[context].get( 'offset' ) or 0 # nonexistent/None/0 --> 0
+            off = data[context].get( 'offset' ) or 0  # nonexistent/None/0 --> 0
         assert siz and off % siz == 0, \
             "Requested byte offset %d is not on a %d-byte data element boundary" % ( off, siz )
 
@@ -235,10 +204,10 @@ class Omron( Message_Router ):
         # complete data.  If no 'elements' has been provided (only possible when hand-forming a
         # request, not via EtherNet/IP CIP protocol), default to all Attribute elements (after
         # element indexed).
-        beg			= index[0]
-        cnt			= len( attribute )
-        elm			= data[context].get( 'elements', cnt - beg ) # Read/Write Tag defaults to all
-        endactual		= beg + elm
+        beg = index[0]
+        cnt = len(attribute)
+        elm = data[context].get( 'elements', cnt - beg )  # Read/Write Tag defaults to all
+        endactual = beg + elm
         assert 0 < endactual <= cnt, \
             "Attribute %s ending element invalid: %r" % ( attribute, (beg, endactual) )
 
@@ -248,15 +217,15 @@ class Omron( Message_Router ):
         # 'beg' by a byte offset, and/or B) reducing 'end' due to reply size limitations or
         # an incomplete number of data elements provided.  The 'end' can only get smaller
         # than the (known valid) 'endactual'.
-        beg		       += off // siz
+        beg	+= off // siz
         if data.service in (self.RD_TAG_RPY, self.RD_FRG_RPY):
-            endmax 		= beg + self.MAX_BYTES // siz
+            endmax = beg + self.MAX_BYTES // siz
         else:
-            endmax		= beg + len( data[context].data )
+            endmax = beg + len( data[context].data )
             assert endmax <= endactual, \
                 "Attribute %s capacity exceeded; writing %d elements beginning at index %d" % (
                     attribute, len( data[context].data ), beg )
-        end			= min( endactual, endmax )
+        end = min( endactual, endmax )
         assert 0 <= beg < cnt, \
             "Attribute %s initial element invalid: %r" % ( attribute, (beg, end) )
         assert beg < end, \
@@ -270,7 +239,7 @@ class Omron( Message_Router ):
         # If the resolution/lookup fails (eg. bad symbolic Tag); ignore it (return False on error)
         # and continue processing, so we can return a proper .status error code from the actual
         # request, below.
-        target			= self.route( data, fail=Message_Router.ROUTE_FALSE )
+        target = self.route( data, fail=Message_Router.ROUTE_FALSE )
         if target:
             if log.isEnabledFor( logging.DETAIL ):
                 log.detail( "%s Routing to %s: %s", self, target, enip_format( data ))
@@ -282,20 +251,20 @@ class Omron( Message_Router ):
 
         # Pick out our services added at this level.  If not recognized, let superclass try; it'll
         # return an appropriate error code if not recognized.
-        if ( data.get( 'service' ) == self.RD_TAG_REQ
-             or 'read_tag' in data and data.setdefault( 'service', self.RD_TAG_REQ ) == self.RD_TAG_REQ ):
+        if (data.get( 'service' ) == self.RD_TAG_REQ
+                or 'read_tag' in data and data.setdefault( 'service', self.RD_TAG_REQ ) == self.RD_TAG_REQ):
             # Read Tag --> Read Tag Reply.
             pass
-        elif ( data.get( 'service' ) == self.RD_FRG_REQ
-               or 'read_frag' in data and data.setdefault( 'service', self.RD_FRG_REQ ) == self.RD_FRG_REQ ):
+        elif (data.get( 'service' ) == self.RD_FRG_REQ
+                or 'read_frag' in data and data.setdefault( 'service', self.RD_FRG_REQ ) == self.RD_FRG_REQ):
             # Read Tag Fragmented --> Read Tag Fragmented Reply.
             pass
-        elif ( data.get( 'service' ) == self.WR_TAG_REQ
-             or 'write_tag' in data and data.setdefault( 'service', self.WR_TAG_REQ ) == self.WR_TAG_REQ ):
+        elif (data.get( 'service' ) == self.WR_TAG_REQ
+                or 'write_tag' in data and data.setdefault( 'service', self.WR_TAG_REQ ) == self.WR_TAG_REQ):
             # Write Tag --> Write Tag Reply.
             pass
-        elif ( data.get( 'service' ) == self.WR_FRG_REQ
-               or 'write_frag' in data and data.setdefault( 'service', self.WR_FRG_REQ ) == self.WR_FRG_REQ ):
+        elif (data.get( 'service' ) == self.WR_FRG_REQ
+               or 'write_frag' in data and data.setdefault( 'service', self.WR_FRG_REQ ) == self.WR_FRG_REQ):
             # Write Tag Fragmented --> Write Tag Fragmented Reply.
             pass
         else:
@@ -327,13 +296,13 @@ class Omron( Message_Router ):
         # 0xFF		0x2105		General Error: Number of Elements extends beyond the end of the requested tag.
         # 0xFF		0x2107		General Error: Tag type used n request does not match the target tag's data type.
 
-        data.service           |= 0x80
+        data.service |= 0x80
         try:
             # We need to find the attribute for all requests, and it better be ours!
-            data.status		= 0x05 # On Failure: Request Path destination unknown
+            data.status = 0x05  # On Failure: Request Path destination unknown
             data.status_ext	= {'size': 1, 'data':[0x0000]}
-            clid, inid, atid	= resolve( data.path, attribute=True )
-            attribute		= lookup( clid, inid, atid )
+            clid, inid, atid = resolve( data.path, attribute=True )
+            attribute = lookup( clid, inid, atid )
             assert clid == self.class_id and inid == self.instance_id, \
                 "Path %r processed by wrong Object %r" % ( data.path['segment'], self )
             assert attribute is not None, \
@@ -344,42 +313,42 @@ class Omron( Message_Router ):
 
             if data.service in (self.RD_TAG_RPY, self.RD_FRG_RPY):
                 # Read Tag [Fragmented] Reply.  Fill in .data and .type
-                context		= 'read_frag' if data.service == self.RD_FRG_RPY else 'read_tag'
-                data[context].type= attribute.parser.tag_type
+                context = 'read_frag' if data.service == self.RD_FRG_RPY else 'read_tag'
+                data[context].type = attribute.parser.tag_type
             elif data.service in (self.WR_TAG_RPY, self.WR_FRG_RPY):
                 # Write Tag [Fragmented] Reply.  We'll allow data payloads of more restricted signed
                 # types into Attributes of a more spacious signed type (eg. writing SINT values into
                 # INT, or REAL Attribute).  Otherwise, the data types must match exactly.
-                context		= 'write_frag'	 if data.service == self.WR_FRG_RPY else 'write_tag'
+                context = 'write_frag' if data.service == self.WR_FRG_RPY else 'write_tag'
                 data.status	= 0xFF
-                data.status_ext= {'size': 1, 'data':[0x2107]}
+                data.status_ext = {'size': 1, 'data':[0x2107]}
                 allowed_tag_types = {
-                    BOOL.tag_type:      (BOOL.tag_type,),
-                    REAL.tag_type:	    (BOOL.tag_type,
-                                             SINT.tag_type, USINT.tag_type,
-                                              INT.tag_type,  UINT.tag_type,
-                                             DINT.tag_type, UDINT.tag_type,
-                                             REAL.tag_type),
-                    LREAL.tag_type:	    (BOOL.tag_type,
-                                         SINT.tag_type, USINT.tag_type,
-                                          INT.tag_type,  UINT.tag_type,
-                                         DINT.tag_type, UDINT.tag_type,
-                                         REAL.tag_type, LREAL.tag_type),
-                    DINT.tag_type:	    (BOOL.tag_type,
-                                             SINT.tag_type, USINT.tag_type,
-                                              INT.tag_type,  UINT.tag_type,
-                                             DINT.tag_type, UDINT.tag_type),
-                    LINT.tag_type:	    (BOOL.tag_type,
-                                             SINT.tag_type, USINT.tag_type,
-                                              INT.tag_type,  UINT.tag_type,
-                                             DINT.tag_type, UDINT.tag_type,
-                                             LINT.tag_type),
-                    INT.tag_type:	    (BOOL.tag_type,
-                                             SINT.tag_type, USINT.tag_type,
-                                             INT.tag_type,   UINT.tag_type),
-                    SINT.tag_type:	    (BOOL.tag_type,
-                                             SINT.tag_type, USINT.tag_type),
-                    OMRDATN.tag_type:   (OMRDATN.tag_type),
+                    BOOL.tag_type: (BOOL.tag_type,),
+                    REAL.tag_type: (BOOL.tag_type,
+                                    SINT.tag_type, USINT.tag_type,
+                                    INT.tag_type,  UINT.tag_type,
+                                    DINT.tag_type, UDINT.tag_type,
+                                    REAL.tag_type),
+                    LREAL.tag_type: (BOOL.tag_type,
+                                     SINT.tag_type, USINT.tag_type,
+                                     INT.tag_type,  UINT.tag_type,
+                                     DINT.tag_type, UDINT.tag_type,
+                                     REAL.tag_type, LREAL.tag_type),
+                    DINT.tag_type: (BOOL.tag_type,
+                                    SINT.tag_type, USINT.tag_type,
+                                    INT.tag_type,  UINT.tag_type,
+                                    DINT.tag_type, UDINT.tag_type),
+                    LINT.tag_type: (BOOL.tag_type,
+                                    SINT.tag_type, USINT.tag_type,
+                                    INT.tag_type,  UINT.tag_type,
+                                    DINT.tag_type, UDINT.tag_type,
+                                    LINT.tag_type),
+                    INT.tag_type: (BOOL.tag_type,
+                                   SINT.tag_type, USINT.tag_type,
+                                   INT.tag_type,   UINT.tag_type),
+                    SINT.tag_type: (BOOL.tag_type,
+                                    SINT.tag_type, USINT.tag_type),
+                    OMRDATN.tag_type: (OMRDATN.tag_type),
                 }
                 assert data[context].type in allowed_tag_types.get(
                     attribute.parser.tag_type, (attribute.parser.tag_type,) ), \
@@ -388,8 +357,8 @@ class Omron( Message_Router ):
             else:
                 raise AssertionError( "Unhandled Service Reply" )
 
-            data.status		= 0xFF # On Failure: General Error
-            data.status_ext	= {'size': 1, 'data': [ 0x2105 ]} # Number of elements beyond end of tag
+            data.status		= 0xFF  # On Failure: General Error
+            data.status_ext	= {'size': 1, 'data': [ 0x2105 ]}  # Number of elements beyond end of tag
 
             # Compute (beg,end] for this reply, given data.path...element, data.elements/offset.
             # The end element of the full request (not the size/data-limited end) is in endactual
@@ -402,7 +371,7 @@ class Omron( Message_Router ):
                             self, end - beg, beg, end-1, attribute, data[context].data )
                 # Final .status is 0x00 if all requested elements were shipped; 0x06 if not
                 data.status		= 0x00 if end == endactual else 0x06
-                data.pop( 'status_ext' ) # non-empty dotdict level; use pop instead of del
+                data.pop( 'status_ext' )  # non-empty dotdict level; use pop instead of del
             else:
                 # Write Tag [Fragmented].  We know the type is right.
                 log.detail( "%s Writing %3d elements %3d-%3d into %s: %r",
@@ -488,18 +457,18 @@ class Omron( Message_Router ):
         elif ( data.get( 'service' ) == cls.WR_TAG_RPY
                or data.get( 'service' ) == cls.WR_FRG_RPY ):
             result	       += USINT.produce(	data.service )
-            result	       += b'\x00' # reserved
+            result	       += b'\x00'  # reserved
             result	       += status.produce(	data )
         elif data.get( 'service' ) == cls.RD_TAG_RPY:
             result	       += USINT.produce(	data.service )
-            result	       += b'\x00' # reserved
+            result	       += b'\x00'  # reserved
             result	       += status.produce(	data )
             if data.status in (0x00, 0x06):
                 result	       += UINT.produce(		data.read_tag.type )
                 result	       += typed_data.produce(	data.read_tag )
         elif data.get( 'service' ) == cls.RD_FRG_RPY:
             result	       += USINT.produce(	data.service )
-            result	       += b'\x00' # reserved
+            result	       += b'\x00'  # reserved
             result	       += status.produce(	data )
             if data.status in (0x00, 0x06):
                 result	       += UINT.produce(		data.read_frag.type )
@@ -511,82 +480,132 @@ class Omron( Message_Router ):
 
 def __read_tag():
     # Read Tag Service
-    srvc			= USINT(	 	  	context='service' )
-    srvc[True]		= path	= EPATH(			context='path' )
-    path[True]			= UINT(		'elements', 	context='read_tag',   extension='.elements',
-                                        terminal=True )
+    srvc = USINT(context='service')
+    srvc[True] = path = EPATH(context='path')
+    path[True] = UINT('elements',
+                      context='read_tag',   
+                      extension='.elements',
+                      terminal=True)
     return srvc
-Omron.register_service_parser( number=Omron.RD_TAG_REQ, name=Omron.RD_TAG_NAM,
-                               short=Omron.RD_TAG_CTX, machine=__read_tag() )
+
+
+Omron.register_service_parser(number=Omron.RD_TAG_REQ,
+                              name=Omron.RD_TAG_NAM,
+                              short=Omron.RD_TAG_CTX, 
+                              machine=__read_tag())
+
 
 def __read_tag_reply():
     # Read Tag Service (reply).  Remainder of symbols are typed data.
-    srvc			= USINT(		 	context='service' )
-    srvc[True]		= rsvd	= octets_drop(	'reserved',	repeat=1 )
-    rsvd[True]		= stts	= status()
-    stts[None]		= schk	= octets_noop(	'check',
-                                                terminal=True )
+    srvc = USINT(context='service')
+    srvc[True] = rsvd = octets_drop('reserved',	
+                                    repeat=1)
+    rsvd[True] = stts = status()
+    stts[None] = schk = octets_noop('check',    
+                                    terminal=True)
 
-    dtyp			= UINT( 	'type',   	context='read_tag',  extension='.type' )
-    dtyp[True]			= typed_data( 	'data',   	context='read_tag',
-                                        tag_type='.type',
-                                        terminal=True )
+    dtyp = UINT('type',
+                context='read_tag',  
+                extension='.type' )
+    dtyp[True] = typed_data('data',
+                            context='read_tag',
+                            tag_type='.type',
+                            terminal=True )
     # For status 0x00 (Success) and 0x06 (Not all data returned), type/data follows.
-    schk[None]			= automata.decide( 'ok',	state=dtyp,
-        predicate=lambda path=None, data=None, **kwds: data[path+'.status' if path else 'status'] in (0x00, 0x06) )
-    schk[None]			= move_if(	'mark',		initializer=True,
-                                                destination='read_tag' )
+    schk[None] = automata.decide('ok',
+                                 state=dtyp,
+                                 predicate=lambda path=None, 
+                                 data=None, 
+                                 **kwds: data[path+'.status' if path else 'status'] in (0x00, 0x06))
+    schk[None] = move_if('mark', 
+                         initializer=True,
+                         destination='read_tag')
     return srvc
-Omron.register_service_parser( number=Omron.RD_TAG_RPY, name=Omron.RD_TAG_NAM + " Reply",
-                               short=Omron.RD_TAG_CTX, machine=__read_tag_reply() )
+
+
+Omron.register_service_parser(number=Omron.RD_TAG_RPY, 
+                              name=Omron.RD_TAG_NAM + " Reply",
+                              short=Omron.RD_TAG_CTX, 
+                              machine=__read_tag_reply())
+
 
 def __read_frag():
     # Read Tag Fragmented Service
-    srvc			= USINT(			context='service' )
-    srvc[True]	= path		= EPATH(			context='path' )
-    path[True]	= elem		= UINT(		'elements',	context='read_frag',  extension='.elements' )
-    elem[True]			= UDINT( 	'offset',   	context='read_frag',  extension='.offset',
-                                        terminal=True )
+    srvc = USINT(context='service')
+    srvc[True] = path = EPATH(context='path')
+    path[True] = elem = UINT('elements', 
+                             context='read_frag', 
+                             extension='.elements')
+    elem[True] = UDINT('offset',
+                       context='read_frag',  
+                       extension='.offset',
+                       terminal=True )
     return srvc
-Omron.register_service_parser( number=Omron.RD_FRG_REQ, name=Omron.RD_FRG_NAM,
-                               short=Omron.RD_FRG_CTX, machine=__read_frag() )
+
+
+Omron.register_service_parser(number=Omron.RD_FRG_REQ, 
+                              name=Omron.RD_FRG_NAM,
+                              short=Omron.RD_FRG_CTX,
+                              machine=__read_frag())
+
 
 def __read_frag_reply():
     # Read Tag Fragmented Service (reply).  Remainder of symbols are typed data.
     # If no data returned (hence no 'read_frag' sub-dotdict), create one using a
     # move_if initializer.
-    srvc			= USINT(			context='service' )
-    srvc[True]	 	= rsvd	= octets_drop(	'reserved',	repeat=1 )
-    rsvd[True]		= stts	= status()
-    stts[None]		= schk	= octets_noop(	'check',
-                                                terminal=True )
+    srvc = USINT( context='service')
+    srvc[True] = rsvd = octets_drop('reserved',	
+                                    repeat=1)
+    rsvd[True] = stts = status()
+    stts[None] = schk = octets_noop('check',
+                                    terminal=True )
 
-    dtyp			= UINT( 	'type',   	context='read_frag',  extension='.type' )
-    dtyp[True]			= typed_data( 	'data',   	context='read_frag',
-                                        tag_type='.type',
-                                        terminal=True )
+    dtyp = UINT('type',
+                context='read_frag',
+                extension='.type')
+    dtyp[True] = typed_data('data',
+                            context='read_frag',
+                            tag_type='.type',
+                            terminal=True)
     # For status 0x00 (Success) and 0x06 (Not all data returned), type/data follows.
-    schk[None]			= automata.decide( 'ok',	state=dtyp,
-        predicate=lambda path=None, data=None, **kwds: data[path+'.status' if path else 'status'] in (0x00, 0x06) )
-    schk[None]			= move_if(	'mark',		initializer=True,
-                                                destination='read_frag' )
+    schk[None] = automata.decide('ok',
+                                 state=dtyp,
+                                 predicate=lambda path=None,
+                                 data=None,
+                                 **kwds: data[path+'.status' if path else 'status'] in (0x00, 0x06) )
+    schk[None] = move_if('mark',
+                         initializer=True,
+                         destination='read_frag')
 
     return srvc
-Omron.register_service_parser( number=Omron.RD_FRG_RPY, name=Omron.RD_FRG_NAM + " Reply",
-                               short=Omron.RD_FRG_CTX, machine=__read_frag_reply() )
+
+
+Omron.register_service_parser(number=Omron.RD_FRG_RPY, 
+                              name=Omron.RD_FRG_NAM + " Reply",
+                              short=Omron.RD_FRG_CTX,
+                              machine=__read_frag_reply() )
+
 
 def __write_tag():
     # Write Tag Service
-    srvc			= USINT(		  	context='service' )
-    srvc[True]		= path	= EPATH(			context='path' )
-    path[True]		= dtyp	= UINT(		'type',   	context='write_tag', extension='.type' )
-    dtyp[True]		= delm	= UINT(		'elements', 	context='write_tag', extension='.elements' )
-    delm[True]			= typed_data( 	'data',		context='write_tag' ,
-                                        tag_type='.type',
-                                        terminal=True )
+    srvc = USINT(context='service')
+    srvc[True] = path = EPATH(context='path')
+    path[True] = dtyp = UINT('type',
+                             context='write_tag',
+                             extension='.type')
+    dtyp[True] = delm = UINT('elements',
+                             context='write_tag',
+                             extension='.elements')
+    delm[True] = typed_data('data',
+                            context='write_tag',
+                            tag_type='.type',
+                            terminal=True )
     return srvc
+
+
 Omron.register_service_parser( number=Omron.WR_TAG_REQ, name=Omron.WR_TAG_NAM,
                                short=Omron.WR_TAG_CTX, machine=__write_tag() )
+
 
 def __write_tag_reply():
     # Write Tag Service (reply).  In order to ensure we have a '.write_tag'
@@ -601,8 +620,11 @@ def __write_tag_reply():
     mark.initial[None]		= move_if( 	'mark',		initializer=True )
 
     return srvc
+
+
 Omron.register_service_parser( number=Omron.WR_TAG_RPY, name=Omron.WR_TAG_NAM + " Reply",
                                short=Omron.WR_TAG_CTX, machine=__write_tag_reply() )
+
 
 def __write_frag():
     # Write Tag Fragmented Service
@@ -615,8 +637,11 @@ def __write_frag():
                                         tag_type='.type',
                                         terminal=True )
     return srvc
+
+
 Omron.register_service_parser( number=Omron.WR_FRG_REQ, name=Omron.WR_FRG_NAM,
                                short=Omron.WR_FRG_CTX, machine=__write_frag() )
+
 
 def __write_frag_reply():
     # Write Tag Fragmented Service (reply)
@@ -627,9 +652,10 @@ def __write_frag_reply():
                                                 terminal=True )
     mark.initial[None]		= move_if( 	'mark',		initializer=True )
     return srvc
+
+
 Omron.register_service_parser( number=Omron.WR_FRG_RPY, name=Omron.WR_FRG_NAM + " Reply",
                                short=Omron.WR_FRG_CTX, machine=__write_frag_reply() )
-
 
 
 def setup_tag( key, val ):
@@ -640,7 +666,7 @@ def setup_tag( key, val ):
         # A new tag!  Allocate a new attribute ID in the Omron (Message Router) by default,
         # or at the specified path.  If a path specified, find the Object, creating it if it
         # doesn't exist.  Then, find the Attribute, ensuring it is consistent if it exists.
-        cls,ins,att		= 0x02,1,None # The (Omron?) Message Router, by default
+        cls,ins,att		= 0x02,1,None  # The (Omron?) Message Router, by default
         if 'path' in val and val['path']:
             cls,ins,att	= resolve( val['path'], attribute=True )
         # See if the tag's Instance exists.  If not, we'll need to create it.  If the Class'
@@ -658,7 +684,7 @@ def setup_tag( key, val ):
                 # from our Message Router CIP Object's class.  Thus, these dynamically
                 # created Objects will understand all of the esoteric *Omron (or whatever
                 # Message Router's) services (eg. Read Tag [Fragmented]).
-                class_type	= type( 'Class %5d/0x%04X' % ( cls, cls ),
+                class_type = type('Class %5d/0x%04X' % ( cls, cls ),
                                   ( lookup( 0x02, 0 ).__class__,),
                                   {'class_id': cls} )
             instance		= class_type( instance_id=ins )
@@ -669,7 +695,7 @@ def setup_tag( key, val ):
         # we've been given an tag address, see if the attribute is known; use it, if so (and
         # compatible w/ the supplied one), or use the supplied Attribute.
         attribute		= None
-        if att: # not None, must be > 0
+        if att:  # not None, must be > 0
             attribute		= lookup( cls, ins, att )
             if attribute:
                 # The Attribute is known.  Better be consistent w/ the required one!
@@ -681,8 +707,8 @@ def setup_tag( key, val ):
             # No required Attribute number assigned.  Find the next available one in the
             # Class Instance.  Start at the largest Attribute index.  Indices are stored as
             # str, so use 'natural' ordering so they end up sorted numerically.
-            att			= int( sorted( instance.attribute, key=misc.natural )[-1] ) if instance.attribute else 0
-            att                += 1
+            att	= int( sorted( instance.attribute, key=misc.natural )[-1] ) if instance.attribute else 0
+            att += 1
 
         if not attribute:
             # No Attribute found; either specified path but no Attribute yet at that path,
@@ -715,11 +741,11 @@ def setup_tag( key, val ):
         if val['attribute'] is not attribute:
             cls,ins,att		= res
             instance		= lookup( cls, ins )
-            if not new: # if new (since a reset), we don't really care about the old attribute
-                log.detail( "Set Tag %-14s%-10s: %-24s Instance Replacing:   %s", key, "@%s/%s/%s" % res, instance,
-                            attribute if log.isEnabledFor( logging.INFO ) else misc.reprlib.repr( attribute ))
-            log.normal(     "Set Tag %-14s%-10s: %-24s Instance Replaced w/: %s", key, "@%s/%s/%s" % res, instance,
-                        val['attribute'] if log.isEnabledFor( logging.INFO ) else misc.reprlib.repr( val['attribute'] ))
+            if not new:  # if new (since a reset), we don't really care about the old attribute
+                log.detail("Set Tag %-14s%-10s: %-24s Instance Replacing:   %s", key, "@%s/%s/%s" % res, instance,
+                           attribute if log.isEnabledFor( logging.INFO ) else misc.reprlib.repr( attribute ))
+            log.normal("Set Tag %-14s%-10s: %-24s Instance Replaced w/: %s", key, "@%s/%s/%s" % res, instance,
+                       val['attribute'] if log.isEnabledFor( logging.INFO ) else misc.reprlib.repr( val['attribute'] ))
             instance.attribute[str(att)] \
                                 = attribute
 
@@ -740,28 +766,28 @@ def setup( **kwds ):
         if not lookup( 0x01, 1 ):
             identity		= kwds.get( 'identity_class',		Identity )
             if identity:
-                identity( instance_id=1 )	# Class 0x01, Instance 1
+                identity( instance_id=1 )  # Class 0x01, Instance 1
         if not lookup( 0x02, 1 ):
             mr			= kwds.get( 'message_router_class',	Omron )
             if mr:
-                mr( instance_id=1 )		# Class 0x02, Instance 1 -- Message Router; knows Omron Tag requests
+                mr( instance_id=1 )  # Class 0x02, Instance 1 -- Message Router; knows Omron Tag requests
         if not lookup( 0x06, 1 ):
             cm			= kwds.get( 'connection_manager_class',	Connection_Manager )
             if cm:
-                cm( instance_id=1 )		# Class 0x06, Instance 1
+                cm( instance_id=1 )  # Class 0x06, Instance 1
 
         if not lookup( 0x66, 1 ):
-            Unknown_Object( instance_id=1 )	# Class 0x66, Instance 1 -- Unknown purpose in Omron Controller
+            Unknown_Object( instance_id=1 )  # Class 0x66, Instance 1 -- Unknown purpose in Omron Controller
 
         if not lookup( 0xF5, 1 ):
             tcpip		= kwds.get( 'tcpip_class', 		TCPIP )
             if tcpip:
-                tcpip( instance_id=1 )		# Class 0xF5, Instance 1
+                tcpip( instance_id=1 )  # Class 0xF5, Instance 1
 
         if not lookup( 0xAC, 1 ):
             logsegs		= kwds.get( 'logical_segments',		Logical_Segments )
             if logsegs:
-                logsegs( instance_id=1 )	# Class 0xAC, Instance 1 -- Logical Segments
+                logsegs( instance_id=1 )  # Class 0xAC, Instance 1 -- Logical Segments
 
         if not setup.ucmm:
             setup.ucmm		= kwds.get( 'UCMM_class', 		ucmm.UCMM )()
@@ -774,13 +800,14 @@ def setup( **kwds ):
         # the Tags and/or their Error codes could change between calls, we check them.  If a
         # tags[name].path is provided, then we'll try to place the Attribute at that path
         # (eg. {'segment':[{'class':123},...]})
-        for key,val in dict.items( kwds.get( 'tags', {} )): # Don't want dotdict depth-first iteration...
+        for key,val in dict.items( kwds.get( 'tags', {} )):  # Don't want dotdict depth-first iteration...
             setup_tag( key, val )
 
     return setup.ucmm
 
-setup.lock			= threading.Lock()
-setup.ucmm			= None
+
+setup.lock = threading.Lock()
+setup.ucmm = None
 
 
 def process( addr, data, **kwds ):
@@ -905,13 +932,14 @@ def process( addr, data, **kwds ):
         return proceed
     except:
         # Parsing failure.  We're done.  Suck out some remaining input to give us some context.
-        processed		= source.sent
-        memory			= bytes(bytearray(source.memory))
-        pos			= len( source.memory )
-        future			= bytes(bytearray( b for b in source ))
-        where			= "at %d total bytes:\n%s\n%s (byte %d)" % (
+        processed = source.sent
+        memory = bytes(bytearray(source.memory))
+        pos = len(source.memory)
+        future = bytes(bytearray( b for b in source ))
+        where = "at %d total bytes:\n%s\n%s (byte %d)" % (
             processed, repr(memory+future), '-' * (len(repr(memory))-1) + '^', pos )
-        log.error( "EtherNet/IP CIP error %s\n%s", where,
-                   ( '' if log.getEffectiveLevel() >= logging.NORMAL
-                     else ''.join( traceback.format_exception( *sys.exc_info() ))))
+        log.error("EtherNet/IP CIP error %s\n%s",
+                  where,
+                  ( '' if log.getEffectiveLevel() >= logging.NORMAL
+                       else ''.join( traceback.format_exception( *sys.exc_info() ))))
         raise

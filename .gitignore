@@ -27,6 +27,7 @@ localtests/localtest.ini
 poetry.lock
 .cache/
 .vscode/
+.venv/
 *.aux
 *.toc
 /ttyS[0-9]
