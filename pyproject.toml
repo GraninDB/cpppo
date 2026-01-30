@@ -2,17 +2,20 @@
 name = "cpppo"
 version = "4.2.0"
 description = "Communications Protocol Python Parser and Originator -- EtherNet/IP CIP"
-authors = [
-    {name = "Author"}
-]
+authors = [{ name = "Author" }]
 readme = "README.org"
 requires-python = ">=3.11"
-dependencies = [
-    "greenery (>=2.0,<3.0)"
-]
+dependencies = ["greenery (>=2.0,<3.0)"]
 
 [tool.poetry]
-package-mode = false
+package-mode = true
+name = "cpppo"
+version = "4.2.0"
+description = "Communications Protocol Python Parser and Originator -- EtherNet/IP CIP"
+authors = ["Author"]
+
+packages = [{ include = "cpppo", from = "src" }]
 
 [build-system]
+requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

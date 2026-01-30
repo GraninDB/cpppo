@@ -5,23 +5,12 @@ To see the Tag operations succeed, fire up:
     python -m cpppo.server.enip Tag=DINT[10]
 """
 
-import os
 import sys
 import logging
-
-sys.path.insert(0, '..')
-sys.path.insert(0, '../..')
-
 import configparser
+
+import cpppo
 from cpppo.server.enip import address, client
-
-try:
-    import cpppo
-except ImportError:
-    # Allow import of 'cpppo' when executing within 'cpppo' package directory
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    import cpppo
-
 
 use_omron = True
 dialect = None
@@ -30,7 +19,7 @@ if use_omron:
     dialect = Omron
 
 locatest_ini = configparser.ConfigParser()
-locatest_ini.read('localtests\\localtest.ini')
+locatest_ini.read('tests\\omron_test.ini')
 
 omron_ip = locatest_ini['omron']['ip']
 
@@ -59,7 +48,6 @@ if __name__ == "__main__":
 #  STRING     - write with odd number of characters does not work
 #  03-21 11:21:40.271 MainThread enip.cli WARNING  validate   Client Single Write Tag  Test_output_string returned non-zero status: Status 21
 #  Test_output_string              <= ['Test1']: 'Status 21 '
-
 
     with client.connector(host=host, port=port, timeout=timeout, dialect=dialect) as connection:
         operations = client.parse_operations(tags)

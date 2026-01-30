@@ -23,7 +23,7 @@ dist/
 *.svg
 .vagrant
 .pytest_cache/
-localtests/localtest.ini
+tests/omron_test.ini
 poetry.lock
 .cache/
 .vscode/
